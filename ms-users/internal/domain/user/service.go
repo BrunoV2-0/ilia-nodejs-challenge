@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Service struct {
@@ -21,11 +20,11 @@ func (s *Service) CreateUser(firstName, lastName, email, password string) (User,
 		return User{}, err
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashed, err := HashPassword(password)
 	if err != nil {
 		return User{}, fmt.Errorf("hashing password: %w", err)
 	}
-	u.Password = string(hashed)
+	u.Password = hashed
 
 	return s.repo.Create(u)
 }
@@ -36,7 +35,7 @@ func (s *Service) Authenticate(email, password string) (User, error) {
 		return User{}, ErrUnauthorized
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)); err != nil {
+	if !VerifyPassword(password, u.Password) {
 		return User{}, ErrUnauthorized
 	}
 
@@ -53,12 +52,11 @@ func (s *Service) GetUser(id uuid.UUID) (User, error) {
 
 func (s *Service) UpdateUser(id uuid.UUID, fields UpdateFields) (User, error) {
 	if fields.Password != nil {
-		hashed, err := bcrypt.GenerateFromPassword([]byte(*fields.Password), bcrypt.DefaultCost)
+		hashed, err := HashPassword(*fields.Password)
 		if err != nil {
 			return User{}, fmt.Errorf("hashing password: %w", err)
 		}
-		h := string(hashed)
-		fields.Password = &h
+		fields.Password = &hashed
 	}
 	return s.repo.Update(id, fields)
 }
