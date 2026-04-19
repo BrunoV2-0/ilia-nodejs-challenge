@@ -72,7 +72,7 @@ func TestRepository_Create(t *testing.T) {
 		Type:   domain.Credit,
 	}
 
-	got, err := repo.Create(tx)
+	got, err := repo.CreateTransaction(tx)
 	require.NoError(t, err)
 
 	assert.NotEqual(t, uuid.UUID{}, got.ID, "ID should be assigned by the database")
@@ -88,11 +88,11 @@ func TestRepository_FindAll(t *testing.T) {
 	userID := uuid.New()
 	otherUserID := uuid.New()
 
-	_, err := repo.Create(domain.Transaction{UserID: userID, Amount: 100.00, Type: domain.Credit})
+	_, err := repo.CreateTransaction(domain.Transaction{UserID: userID, Amount: 100.00, Type: domain.Credit})
 	require.NoError(t, err)
-	_, err = repo.Create(domain.Transaction{UserID: userID, Amount: 40.00, Type: domain.Debit})
+	_, err = repo.CreateTransaction(domain.Transaction{UserID: userID, Amount: 40.00, Type: domain.Debit})
 	require.NoError(t, err)
-	_, err = repo.Create(domain.Transaction{UserID: otherUserID, Amount: 200.00, Type: domain.Credit})
+	_, err = repo.CreateTransaction(domain.Transaction{UserID: otherUserID, Amount: 200.00, Type: domain.Credit})
 	require.NoError(t, err)
 
 	t.Run("returns all transactions for user with no type filter", func(t *testing.T) {
@@ -192,40 +192,6 @@ func TestRepository_UpdateWalletVersion(t *testing.T) {
 	})
 }
 
-func TestRepository_GetBalance(t *testing.T) {
-	db := setupTestDB(t)
-	repo := walletdb.New(db)
-
-	userID := uuid.New()
-
-	t.Run("returns 0 for user with no wallet", func(t *testing.T) {
-		balance, err := repo.GetBalance(userID.String())
-		require.NoError(t, err)
-		assert.Equal(t, 0.0, balance)
-	})
-
-	t.Run("returns balance from wallet after updates", func(t *testing.T) {
-		uid := uuid.New()
-
-		w, err := repo.FindOrCreateWallet(uid)
-		require.NoError(t, err)
-
-		ok, err := repo.UpdateWalletVersion(w.ID, w.Version, 200.00)
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		w2, err := repo.FindOrCreateWallet(uid)
-		require.NoError(t, err)
-
-		ok, err = repo.UpdateWalletVersion(w2.ID, w2.Version, -50.50)
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		balance, err := repo.GetBalance(uid.String())
-		require.NoError(t, err)
-		assert.Equal(t, 149.50, balance)
-	})
-}
 
 func TestRepository_InTx_Commit(t *testing.T) {
 	db := setupTestDB(t)
@@ -235,7 +201,7 @@ func TestRepository_InTx_Commit(t *testing.T) {
 	var createdID uuid.UUID
 
 	err := repo.InTx(func(tx domain.Repository) error {
-		got, err := tx.Create(domain.Transaction{UserID: userID, Amount: 100.00, Type: domain.Credit})
+		got, err := tx.CreateTransaction(domain.Transaction{UserID: userID, Amount: 100.00, Type: domain.Credit})
 		if err != nil {
 			return err
 		}
@@ -258,7 +224,7 @@ func TestRepository_InTx_Rollback(t *testing.T) {
 	sentinel := errors.New("abort")
 
 	err := repo.InTx(func(tx domain.Repository) error {
-		_, err := tx.Create(domain.Transaction{UserID: userID, Amount: 100.00, Type: domain.Credit})
+		_, err := tx.CreateTransaction(domain.Transaction{UserID: userID, Amount: 100.00, Type: domain.Credit})
 		if err != nil {
 			return err
 		}
@@ -306,7 +272,7 @@ func TestRepository_OCC_ConcurrentDebit(t *testing.T) {
 					results[i] = result{ok: false, err: domain.ErrInsufficientFunds}
 					return domain.ErrInsufficientFunds
 				}
-				_, err = tx.Create(domain.Transaction{UserID: userID, Amount: 150.00, Type: domain.Debit})
+				_, err = tx.CreateTransaction(domain.Transaction{UserID: userID, Amount: 150.00, Type: domain.Debit})
 				if err != nil {
 					return err
 				}
@@ -335,7 +301,7 @@ func TestRepository_OCC_ConcurrentDebit(t *testing.T) {
 	}
 	assert.Equal(t, 1, successes, "exactly one debit must succeed")
 
-	final, err := repo.GetBalance(userID.String())
+	finalWallet, err := repo.FindOrCreateWallet(userID)
 	require.NoError(t, err)
-	assert.Equal(t, 50.0, final, "balance must be 200 - 150 = 50")
+	assert.Equal(t, 50.0, finalWallet.Balance, "balance must be 200 - 150 = 50")
 }

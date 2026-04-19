@@ -26,7 +26,7 @@ func New(db *sqlx.DB) domain.Repository {
 	return &PostgresRepository{db: db, q: db}
 }
 
-func (r *PostgresRepository) Create(tx domain.Transaction) (domain.Transaction, error) {
+func (r *PostgresRepository) CreateTransaction(tx domain.Transaction) (domain.Transaction, error) {
 	const query = `
 		INSERT INTO transactions (user_id, amount, type)
 		VALUES ($1, $2, $3)
@@ -60,19 +60,6 @@ func (r *PostgresRepository) FindAll(userID string, txType string) ([]domain.Tra
 	return rows, nil
 }
 
-func (r *PostgresRepository) GetBalance(userID string) (float64, error) {
-	const query = `SELECT COALESCE(balance, 0) FROM wallets WHERE user_id = $1`
-
-	var balance float64
-	err := r.q.QueryRowx(query, userID).Scan(&balance)
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("getting balance: %w", err)
-	}
-	return balance, nil
-}
 
 func (r *PostgresRepository) FindOrCreateWallet(userID uuid.UUID) (domain.Wallet, error) {
 	const query = `

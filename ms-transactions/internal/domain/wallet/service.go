@@ -63,7 +63,7 @@ func (s *Service) tryCreate(uid uuid.UUID, amount float64, txType TransactionTyp
 			delta = -amount
 		}
 
-		result, err = repo.Create(Transaction{UserID: uid, Amount: amount, Type: txType})
+		result, err = repo.CreateTransaction(Transaction{UserID: uid, Amount: amount, Type: txType})
 		if err != nil {
 			return err
 		}
@@ -82,10 +82,6 @@ func (s *Service) tryCreate(uid uuid.UUID, amount float64, txType TransactionTyp
 
 func (s *Service) ListTransactions(userID string, txType string) ([]Transaction, error) {
 	return s.repo.FindAll(userID, txType)
-}
-
-func (s *Service) GetBalance(userID string) (float64, error) {
-	return s.repo.GetBalance(userID)
 }
 
 func jitter(d time.Duration) time.Duration {

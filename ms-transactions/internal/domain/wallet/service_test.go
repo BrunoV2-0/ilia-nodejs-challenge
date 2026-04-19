@@ -9,24 +9,19 @@ import (
 )
 
 type mockRepository struct {
-	createFn              func(tx wallet.Transaction) (wallet.Transaction, error)
+	createTransactionFn   func(tx wallet.Transaction) (wallet.Transaction, error)
 	findAllFn             func(userID string, txType string) ([]wallet.Transaction, error)
-	getBalanceFn          func(userID string) (float64, error)
 	findOrCreateWalletFn  func(userID uuid.UUID) (wallet.Wallet, error)
 	updateWalletVersionFn func(walletID uuid.UUID, currentVersion int64, delta float64) (bool, error)
 	inTxFn                func(fn func(wallet.Repository) error) error
 }
 
-func (m *mockRepository) Create(tx wallet.Transaction) (wallet.Transaction, error) {
-	return m.createFn(tx)
+func (m *mockRepository) CreateTransaction(tx wallet.Transaction) (wallet.Transaction, error) {
+	return m.createTransactionFn(tx)
 }
 
 func (m *mockRepository) FindAll(userID string, txType string) ([]wallet.Transaction, error) {
 	return m.findAllFn(userID, txType)
-}
-
-func (m *mockRepository) GetBalance(userID string) (float64, error) {
-	return m.getBalanceFn(userID)
 }
 
 func (m *mockRepository) FindOrCreateWallet(userID uuid.UUID) (wallet.Wallet, error) {
@@ -55,7 +50,7 @@ func TestService_CreateTransaction(t *testing.T) {
 
 	t.Run("success — valid credit transaction persisted", func(t *testing.T) {
 		repo := &mockRepository{
-			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				tx.ID = uuid.New()
 				return tx, nil
 			},
@@ -80,7 +75,7 @@ func TestService_CreateTransaction(t *testing.T) {
 	t.Run("invalid entity — repo never called", func(t *testing.T) {
 		repoCalled := false
 		repo := &mockRepository{
-			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				repoCalled = true
 				return tx, nil
 			},
@@ -99,7 +94,7 @@ func TestService_CreateTransaction(t *testing.T) {
 	t.Run("invalid userID — repo never called", func(t *testing.T) {
 		repoCalled := false
 		repo := &mockRepository{
-			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				repoCalled = true
 				return tx, nil
 			},
@@ -117,7 +112,7 @@ func TestService_CreateTransaction(t *testing.T) {
 
 	t.Run("repo error propagated", func(t *testing.T) {
 		repo := &mockRepository{
-			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				return wallet.Transaction{}, errors.New("db error")
 			},
 		}
@@ -137,7 +132,7 @@ func TestService_CreateTransaction_DebitInsufficientFunds(t *testing.T) {
 		findOrCreateWalletFn: func(uid uuid.UUID) (wallet.Wallet, error) {
 			return wallet.Wallet{ID: uuid.New(), UserID: uid, Balance: 50.00, Version: 0}, nil
 		},
-		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+		createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 			t.Error("Create must not be called when balance is insufficient")
 			return wallet.Transaction{}, nil
 		},
@@ -158,7 +153,7 @@ func TestService_CreateTransaction_DebitExactBalance(t *testing.T) {
 		findOrCreateWalletFn: func(uid uuid.UUID) (wallet.Wallet, error) {
 			return wallet.Wallet{ID: walletID, UserID: uid, Balance: 100.00, Version: 0}, nil
 		},
-		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+		createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 			tx.ID = uuid.New()
 			return tx, nil
 		},
@@ -179,7 +174,7 @@ func TestService_CreateTransaction_OCC_ConflictThenSuccess(t *testing.T) {
 	calls := 0
 
 	repo := &mockRepository{
-		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+		createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 			tx.ID = uuid.New()
 			return tx, nil
 		},
@@ -209,7 +204,7 @@ func TestService_CreateTransaction_OCC_ConflictExhausted(t *testing.T) {
 	userID := uuid.New().String()
 
 	repo := &mockRepository{
-		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+		createTransactionFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 			tx.ID = uuid.New()
 			return tx, nil
 		},
@@ -273,57 +268,3 @@ func TestService_ListTransactions(t *testing.T) {
 	})
 }
 
-func TestService_GetBalance(t *testing.T) {
-	userID := uuid.New().String()
-
-	t.Run("delegates to repo and returns balance", func(t *testing.T) {
-		repo := &mockRepository{
-			getBalanceFn: func(uid string) (float64, error) {
-				if uid != userID {
-					t.Errorf("wrong userID: %v", uid)
-				}
-				return 250.50, nil
-			},
-		}
-		svc := wallet.NewService(repo)
-
-		got, err := svc.GetBalance(userID)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if got != 250.50 {
-			t.Errorf("expected 250.50, got %v", got)
-		}
-	})
-
-	t.Run("zero balance on empty account", func(t *testing.T) {
-		repo := &mockRepository{
-			getBalanceFn: func(uid string) (float64, error) {
-				return 0, nil
-			},
-		}
-		svc := wallet.NewService(repo)
-
-		got, err := svc.GetBalance(userID)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if got != 0 {
-			t.Errorf("expected 0, got %v", got)
-		}
-	})
-
-	t.Run("repo error propagated", func(t *testing.T) {
-		repo := &mockRepository{
-			getBalanceFn: func(uid string) (float64, error) {
-				return 0, errors.New("db error")
-			},
-		}
-		svc := wallet.NewService(repo)
-
-		_, err := svc.GetBalance(userID)
-		if err == nil {
-			t.Fatal("expected error from repo, got nil")
-		}
-	})
-}
