@@ -45,7 +45,8 @@ func setupTestDB(t *testing.T) *sqlx.DB {
 		email      VARCHAR(255) NOT NULL UNIQUE,
 		password   VARCHAR(255) NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		deleted_at TIMESTAMPTZ
 	)`)
 	require.NoError(t, err)
 
@@ -172,14 +173,22 @@ func TestRepository_Update_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, user.ErrNotFound)
 }
 
-func TestRepository_Delete(t *testing.T) {
-	repo := userdb.New(setupTestDB(t))
+func TestRepository_Delete_SoftDeletes(t *testing.T) {
+	db := setupTestDB(t)
+	repo := userdb.New(db)
 	created := seedUser(t, repo, "delete@example.com")
 
 	require.NoError(t, repo.Delete(created.ID))
 
+	// domain queries must not see the soft-deleted user
 	_, err := repo.FindByID(created.ID)
 	assert.ErrorIs(t, err, user.ErrNotFound)
+
+	// but the row must still exist in the database with deleted_at set
+	var deletedAt *string
+	err = db.QueryRow(`SELECT deleted_at::text FROM users WHERE id = $1`, created.ID).Scan(&deletedAt)
+	require.NoError(t, err)
+	assert.NotNil(t, deletedAt, "deleted_at must be set after soft delete")
 }
 
 func TestRepository_Delete_NotFound(t *testing.T) {

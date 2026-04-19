@@ -6,12 +6,19 @@ import (
 	"github.com/google/uuid"
 )
 
-type Service struct {
-	repo Repository
+// WalletChecker is satisfied by the ms-transactions HTTP client.
+// Defined here so the domain rule (no delete with balance) stays in the domain.
+type WalletChecker interface {
+	HasBalance(userID uuid.UUID) (bool, error)
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+type Service struct {
+	repo    Repository
+	wallets WalletChecker
+}
+
+func NewService(repo Repository, wallets WalletChecker) *Service {
+	return &Service{repo: repo, wallets: wallets}
 }
 
 func (s *Service) CreateUser(firstName, lastName, email, password string) (User, error) {
@@ -62,5 +69,12 @@ func (s *Service) UpdateUser(id uuid.UUID, fields UpdateFields) (User, error) {
 }
 
 func (s *Service) DeleteUser(id uuid.UUID) error {
+	hasBalance, err := s.wallets.HasBalance(id)
+	if err != nil {
+		return fmt.Errorf("checking wallet balance: %w", err)
+	}
+	if hasBalance {
+		return ErrWalletNotEmpty
+	}
 	return s.repo.Delete(id)
 }

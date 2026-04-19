@@ -43,7 +43,9 @@ func (r *PostgresRepository) Create(u domain.User) (domain.User, error) {
 func (r *PostgresRepository) FindAll() ([]domain.User, error) {
 	const query = `
 		SELECT id, first_name, last_name, email, password, created_at, updated_at
-		FROM users ORDER BY created_at DESC`
+		FROM users
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC`
 
 	var rows []domain.User
 	if err := r.db.Select(&rows, query); err != nil {
@@ -55,7 +57,8 @@ func (r *PostgresRepository) FindAll() ([]domain.User, error) {
 func (r *PostgresRepository) FindByID(id uuid.UUID) (domain.User, error) {
 	const query = `
 		SELECT id, first_name, last_name, email, password, created_at, updated_at
-		FROM users WHERE id = $1`
+		FROM users
+		WHERE id = $1 AND deleted_at IS NULL`
 
 	var row domain.User
 	if err := r.db.QueryRowx(query, id).StructScan(&row); err != nil {
@@ -70,7 +73,8 @@ func (r *PostgresRepository) FindByID(id uuid.UUID) (domain.User, error) {
 func (r *PostgresRepository) FindByEmail(email string) (domain.User, error) {
 	const query = `
 		SELECT id, first_name, last_name, email, password, created_at, updated_at
-		FROM users WHERE email = $1`
+		FROM users
+		WHERE email = $1 AND deleted_at IS NULL`
 
 	var row domain.User
 	if err := r.db.QueryRowx(query, email).StructScan(&row); err != nil {
@@ -104,7 +108,8 @@ func (r *PostgresRepository) Update(id uuid.UUID, fields domain.UpdateFields) (d
 	}
 
 	query := fmt.Sprintf(`
-		UPDATE users SET %s WHERE id = :id
+		UPDATE users SET %s
+		WHERE id = :id AND deleted_at IS NULL
 		RETURNING id, first_name, last_name, email, password, created_at, updated_at`,
 		strings.Join(setClauses, ", "))
 
@@ -124,7 +129,9 @@ func (r *PostgresRepository) Update(id uuid.UUID, fields domain.UpdateFields) (d
 }
 
 func (r *PostgresRepository) Delete(id uuid.UUID) error {
-	const query = `DELETE FROM users WHERE id = $1`
+	const query = `
+		UPDATE users SET deleted_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL`
 
 	result, err := r.db.Exec(query, id)
 	if err != nil {
