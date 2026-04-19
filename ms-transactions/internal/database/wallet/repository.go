@@ -61,10 +61,19 @@ func (r *PostgresRepository) FindAllTransactions(userID string, txType string) (
 }
 
 func (r *PostgresRepository) FindOrCreateWallet(userID uuid.UUID) (domain.Wallet, error) {
+	// DO NOTHING avoids the exclusive row-lock that DO UPDATE would acquire on
+	// the conflicting row — prevents deadlocks when concurrent transactions
+	// call FindOrCreateWallet for the same user simultaneously.
 	const query = `
-		INSERT INTO wallets (user_id) VALUES ($1)
-		ON CONFLICT (user_id) DO UPDATE SET user_id = wallets.user_id
-		RETURNING id, user_id, balance, version`
+		WITH ins AS (
+			INSERT INTO wallets (user_id) VALUES ($1)
+			ON CONFLICT (user_id) DO NOTHING
+			RETURNING id, user_id, balance, version
+		)
+		SELECT id, user_id, balance, version FROM ins
+		UNION ALL
+		SELECT id, user_id, balance, version FROM wallets
+		WHERE user_id = $1 AND NOT EXISTS (SELECT 1 FROM ins)`
 
 	var w domain.Wallet
 	err := r.q.QueryRowx(query, userID).StructScan(&w)

@@ -401,5 +401,5 @@ func TestRepository_OCC_ConcurrentDebit_EvenWithAvailableBalance(t *testing.T) {
 
 	finalWallet, err := repo.FindOrCreateWallet(userID)
 	require.NoError(t, err)
-	assert.Equal(t, 50.0, finalWallet.Balance, "balance must be 350 - 150 = 200")
+	assert.Equal(t, 200.0, finalWallet.Balance, "balance must be 350 - 150 = 200")
 }
