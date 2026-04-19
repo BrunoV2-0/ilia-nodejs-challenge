@@ -267,3 +267,41 @@ func TestService_ListTransactions(t *testing.T) {
 		}
 	})
 }
+
+func TestService_GetWallet(t *testing.T) {
+	userID := uuid.New().String()
+
+	t.Run("returns wallet", func(t *testing.T) {
+		walletID := uuid.New()
+		repo := &mockRepository{
+			findOrCreateWalletFn: func(uid uuid.UUID) (wallet.Wallet, error) {
+				return wallet.Wallet{ID: walletID, UserID: uid, Balance: 250.00, Version: 3}, nil
+			},
+		}
+		svc := wallet.NewService(repo)
+
+		w, err := svc.GetWallet(userID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if w.ID != walletID {
+			t.Errorf("expected wallet ID %v, got %v", walletID, w.ID)
+		}
+		if w.Balance != 250.00 {
+			t.Errorf("expected balance 250.00, got %v", w.Balance)
+		}
+		if w.Version != 3 {
+			t.Errorf("expected version 3, got %v", w.Version)
+		}
+	})
+
+	t.Run("invalid userID returns error", func(t *testing.T) {
+		repo := &mockRepository{}
+		svc := wallet.NewService(repo)
+
+		_, err := svc.GetWallet("not-a-uuid")
+		if err == nil {
+			t.Fatal("expected error for invalid userID, got nil")
+		}
+	})
+}

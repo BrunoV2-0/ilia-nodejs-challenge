@@ -84,6 +84,14 @@ func (s *Service) ListTransactions(userID string, txType string) ([]Transaction,
 	return s.repo.FindAllTransactions(userID, txType)
 }
 
+func (s *Service) GetWallet(userID string) (Wallet, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return Wallet{}, err
+	}
+	return s.repo.FindOrCreateWallet(uid)
+}
+
 func jitter(d time.Duration) time.Duration {
 	return d + time.Duration(rand.Int63n(int64(d)+1))
 }
