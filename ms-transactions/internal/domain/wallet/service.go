@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"errors"
+	"math"
 	"math/rand"
 	"time"
 
@@ -33,7 +34,7 @@ func (s *Service) CreateTransaction(userID string, amount float64, txType Transa
 	}
 
 	var result Transaction
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		result, err = s.tryCreate(uid, amount, txType)
 		if err == nil {
 			return result, nil
@@ -41,7 +42,9 @@ func (s *Service) CreateTransaction(userID string, amount float64, txType Transa
 		if !errors.Is(err, ErrConflict) {
 			return Transaction{}, err
 		}
-		time.Sleep(jitter(baseDelay * (1 << attempt)))
+		if attempt < maxRetries-1 {
+			time.Sleep(jitter(baseDelay * time.Duration(math.Pow(2, float64(attempt)))))
+		}
 	}
 	return Transaction{}, ErrConflict
 }
@@ -82,6 +85,14 @@ func (s *Service) tryCreate(uid uuid.UUID, amount float64, txType TransactionTyp
 
 func (s *Service) ListTransactions(userID string, txType string) ([]Transaction, error) {
 	return s.repo.FindAllTransactions(userID, txType)
+}
+
+func (s *Service) GetWallet(userID string) (Wallet, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return Wallet{}, err
+	}
+	return s.repo.FindOrCreateWallet(uid)
 }
 
 func jitter(d time.Duration) time.Duration {

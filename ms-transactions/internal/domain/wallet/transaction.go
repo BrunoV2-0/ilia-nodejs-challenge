@@ -15,11 +15,11 @@ const (
 )
 
 type Transaction struct {
-	ID        uuid.UUID       `db:"id"`
-	UserID    uuid.UUID       `db:"user_id"`
-	Amount    float64         `db:"amount"`
-	Type      TransactionType `db:"type"`
-	CreatedAt time.Time       `db:"created_at"`
+	ID        uuid.UUID       `db:"id"         json:"id"`
+	UserID    uuid.UUID       `db:"user_id"    json:"user_id"`
+	Amount    float64         `db:"amount"     json:"amount"`
+	Type      TransactionType `db:"type"       json:"type"`
+	CreatedAt time.Time       `db:"created_at" json:"created_at"`
 }
 
 func (t *Transaction) Validate() error {
