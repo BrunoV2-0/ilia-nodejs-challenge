@@ -81,7 +81,7 @@ func (s *Service) tryCreate(uid uuid.UUID, amount float64, txType TransactionTyp
 }
 
 func (s *Service) ListTransactions(userID string, txType string) ([]Transaction, error) {
-	return s.repo.FindAll(userID, txType)
+	return s.repo.FindAllTransactions(userID, txType)
 }
 
 func jitter(d time.Duration) time.Duration {

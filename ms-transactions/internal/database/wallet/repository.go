@@ -40,7 +40,7 @@ func (r *PostgresRepository) CreateTransaction(tx domain.Transaction) (domain.Tr
 	return row, nil
 }
 
-func (r *PostgresRepository) FindAll(userID string, txType string) ([]domain.Transaction, error) {
+func (r *PostgresRepository) FindAllTransactions(userID string, txType string) ([]domain.Transaction, error) {
 	var (
 		rows []domain.Transaction
 		err  error
@@ -59,7 +59,6 @@ func (r *PostgresRepository) FindAll(userID string, txType string) ([]domain.Tra
 	}
 	return rows, nil
 }
-
 
 func (r *PostgresRepository) FindOrCreateWallet(userID uuid.UUID) (domain.Wallet, error) {
 	const query = `

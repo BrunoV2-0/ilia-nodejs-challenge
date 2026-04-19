@@ -61,7 +61,7 @@ func setupTestDB(t *testing.T) *sqlx.DB {
 	return db
 }
 
-func TestRepository_Create(t *testing.T) {
+func TestRepository_CreateTransaction(t *testing.T) {
 	db := setupTestDB(t)
 	repo := walletdb.New(db)
 
@@ -81,7 +81,7 @@ func TestRepository_Create(t *testing.T) {
 	assert.Equal(t, domain.Credit, got.Type)
 }
 
-func TestRepository_FindAll(t *testing.T) {
+func TestRepository_FindAllTransactions(t *testing.T) {
 	db := setupTestDB(t)
 	repo := walletdb.New(db)
 
@@ -96,27 +96,27 @@ func TestRepository_FindAll(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("returns all transactions for user with no type filter", func(t *testing.T) {
-		txs, err := repo.FindAll(userID.String(), "")
+		txs, err := repo.FindAllTransactions(userID.String(), "")
 		require.NoError(t, err)
 		assert.Len(t, txs, 2)
 	})
 
 	t.Run("filters by CREDIT type", func(t *testing.T) {
-		txs, err := repo.FindAll(userID.String(), "CREDIT")
+		txs, err := repo.FindAllTransactions(userID.String(), "CREDIT")
 		require.NoError(t, err)
 		assert.Len(t, txs, 1)
 		assert.Equal(t, domain.Credit, txs[0].Type)
 	})
 
 	t.Run("filters by DEBIT type", func(t *testing.T) {
-		txs, err := repo.FindAll(userID.String(), "DEBIT")
+		txs, err := repo.FindAllTransactions(userID.String(), "DEBIT")
 		require.NoError(t, err)
 		assert.Len(t, txs, 1)
 		assert.Equal(t, domain.Debit, txs[0].Type)
 	})
 
 	t.Run("does not return other user transactions", func(t *testing.T) {
-		txs, err := repo.FindAll(otherUserID.String(), "")
+		txs, err := repo.FindAllTransactions(otherUserID.String(), "")
 		require.NoError(t, err)
 		assert.Len(t, txs, 1)
 	})
@@ -192,7 +192,6 @@ func TestRepository_UpdateWalletVersion(t *testing.T) {
 	})
 }
 
-
 func TestRepository_InTx_Commit(t *testing.T) {
 	db := setupTestDB(t)
 	repo := walletdb.New(db)
@@ -210,7 +209,7 @@ func TestRepository_InTx_Commit(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	txs, err := repo.FindAll(userID.String(), "")
+	txs, err := repo.FindAllTransactions(userID.String(), "")
 	require.NoError(t, err)
 	require.Len(t, txs, 1)
 	assert.Equal(t, createdID, txs[0].ID)
@@ -232,7 +231,7 @@ func TestRepository_InTx_Rollback(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, sentinel)
 
-	txs, err := repo.FindAll(userID.String(), "")
+	txs, err := repo.FindAllTransactions(userID.String(), "")
 	require.NoError(t, err)
 	assert.Empty(t, txs, "transaction must be rolled back")
 }
@@ -256,18 +255,26 @@ func TestRepository_OCC_ConcurrentDebit(t *testing.T) {
 		err error
 	}
 	results := make([]result, 2)
-	var wg sync.WaitGroup
-	wg.Add(2)
 
-	for i := 0; i < 2; i++ {
-		i := i
-		go func() {
-			defer wg.Done()
+	// ready is buffered so goroutines never block on the send.
+	// gate is closed once both have read the wallet, forcing a genuine OCC race.
+	ready := make(chan struct{}, 2)
+	gate := make(chan struct{})
+
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Go(func() {
 			err := repo.InTx(func(tx domain.Repository) error {
 				wallet, err := tx.FindOrCreateWallet(userID)
 				if err != nil {
 					return err
 				}
+
+				// signal that this goroutine has read the wallet, then wait
+				// for both goroutines to reach this point before proceeding
+				ready <- struct{}{}
+				_, _ = <-gate
+
 				if !wallet.CanDebit(150.00) {
 					results[i] = result{ok: false, err: domain.ErrInsufficientFunds}
 					return domain.ErrInsufficientFunds
@@ -289,8 +296,15 @@ func TestRepository_OCC_ConcurrentDebit(t *testing.T) {
 			if err != nil && !errors.Is(err, domain.ErrInsufficientFunds) && !errors.Is(err, domain.ErrConflict) {
 				results[i] = result{err: err}
 			}
-		}()
+		})
 	}
+
+	// open the gate only after both goroutines have read the wallet,
+	// ensuring they race on the same version
+	<-ready
+	<-ready
+	close(gate)
+
 	wg.Wait()
 
 	successes := 0
@@ -304,4 +318,88 @@ func TestRepository_OCC_ConcurrentDebit(t *testing.T) {
 	finalWallet, err := repo.FindOrCreateWallet(userID)
 	require.NoError(t, err)
 	assert.Equal(t, 50.0, finalWallet.Balance, "balance must be 200 - 150 = 50")
+}
+
+func TestRepository_OCC_ConcurrentDebit_EvenWithAvailableBalance(t *testing.T) {
+	db := setupTestDB(t)
+	repo := walletdb.New(db)
+
+	userID := uuid.New()
+
+	// seed wallet with 350.00
+	w, err := repo.FindOrCreateWallet(userID)
+	require.NoError(t, err)
+	ok, err := repo.UpdateWalletVersion(w.ID, w.Version, 350.00)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// two goroutines each try to debit 150 — only one can succeed
+	type result struct {
+		ok  bool
+		err error
+	}
+	results := make([]result, 2)
+
+	// ready is buffered so goroutines never block on the send.
+	// gate is closed once both have read the wallet, forcing a genuine OCC race.
+	ready := make(chan struct{}, 2)
+	gate := make(chan struct{})
+
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Go(func() {
+			err := repo.InTx(func(tx domain.Repository) error {
+				wallet, err := tx.FindOrCreateWallet(userID)
+				if err != nil {
+					return err
+				}
+
+				// signal that this goroutine has read the wallet, then wait
+				// for both goroutines to reach this point before proceeding
+				ready <- struct{}{}
+				_, _ = <-gate
+
+				if !wallet.CanDebit(150.00) {
+					results[i] = result{ok: false, err: domain.ErrInsufficientFunds}
+					return domain.ErrInsufficientFunds
+				}
+				_, err = tx.CreateTransaction(domain.Transaction{UserID: userID, Amount: 150.00, Type: domain.Debit})
+				if err != nil {
+					return err
+				}
+				updated, err := tx.UpdateWalletVersion(wallet.ID, wallet.Version, -150.00)
+				if err != nil {
+					return err
+				}
+				if !updated {
+					return domain.ErrConflict
+				}
+				results[i] = result{ok: true}
+				return nil
+			})
+			if err != nil && !errors.Is(err, domain.ErrInsufficientFunds) && !errors.Is(err, domain.ErrConflict) {
+				results[i] = result{err: err}
+			}
+		})
+	}
+
+	// open the gate only after both goroutines have read the wallet,
+	// ensuring they race on the same version
+	<-ready
+	<-ready
+	close(gate)
+
+	wg.Wait()
+
+	successes := 0
+	for _, r := range results {
+		if r.ok {
+			successes++
+		}
+	}
+	assert.Equal(t, 1, successes, "exactly one debit must succeed")
+
+	finalWallet, err := repo.FindOrCreateWallet(userID)
+	require.NoError(t, err)
+	assert.Equal(t, 50.0, finalWallet.Balance, "balance must be 350 - 150 = 200")
 }

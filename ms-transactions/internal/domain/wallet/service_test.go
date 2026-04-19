@@ -20,7 +20,7 @@ func (m *mockRepository) CreateTransaction(tx wallet.Transaction) (wallet.Transa
 	return m.createTransactionFn(tx)
 }
 
-func (m *mockRepository) FindAll(userID string, txType string) ([]wallet.Transaction, error) {
+func (m *mockRepository) FindAllTransactions(userID string, txType string) ([]wallet.Transaction, error) {
 	return m.findAllFn(userID, txType)
 }
 
@@ -267,4 +267,3 @@ func TestService_ListTransactions(t *testing.T) {
 		}
 	})
 }
-
