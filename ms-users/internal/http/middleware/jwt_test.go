@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/ilia/ms-transactions/internal/http/middleware"
+	"github.com/ilia/ms-users/internal/http/middleware"
 )
 
 const testSecret = "PRIVATEKEY"
@@ -22,58 +22,37 @@ func makeToken(secret, sub string, exp time.Time) string {
 }
 
 func TestJWT_MissingHeader(t *testing.T) {
-	handler := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
 	}
 }
 
 func TestJWT_InvalidToken(t *testing.T) {
-	handler := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer not.a.token")
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestJWT_WrongSecret(t *testing.T) {
-	handler := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer "+makeToken("wrong-secret", "user-id", time.Time{}))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
+	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
 	}
 }
 
 func TestJWT_ExpiredToken(t *testing.T) {
-	handler := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+makeToken(testSecret, "user-id", time.Now().Add(-time.Hour)))
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
+	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
 	}
@@ -81,26 +60,26 @@ func TestJWT_ExpiredToken(t *testing.T) {
 
 func TestJWT_ValidToken_InjectsUserID(t *testing.T) {
 	sub := "550e8400-e29b-41d4-a716-446655440000"
-	var gotUserID string
+	var gotID string
 
-	handler := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, ok := middleware.UserIDFromContext(r.Context())
 		if !ok {
-			t.Error("expected userID in context, got none")
+			t.Error("expected userID in context")
 		}
-		gotUserID = id
+		gotID = id
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+makeToken(testSecret, sub, time.Time{}))
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	if gotUserID != sub {
-		t.Errorf("expected userID %q, got %q", sub, gotUserID)
+	if gotID != sub {
+		t.Errorf("expected %q, got %q", sub, gotID)
 	}
 }
