@@ -25,7 +25,7 @@ func New(baseURL, internalKey string) *TransactionsClient {
 }
 
 func (c *TransactionsClient) HasBalance(userID uuid.UUID) (bool, error) {
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/wallets/balance", nil)
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/internal/wallets/balance", nil)
 	if err != nil {
 		return false, fmt.Errorf("creating request: %w", err)
 	}

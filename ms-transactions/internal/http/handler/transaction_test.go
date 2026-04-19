@@ -38,7 +38,9 @@ func (m *mockService) GetWallet(userID string) (domain.Wallet, error) {
 
 func newRouter(svc *mockService) http.Handler {
 	r := chi.NewRouter()
-	handler.New(svc).Routes(r)
+	h := handler.New(svc)
+	h.Routes(r)
+	h.InternalRoutes(r)
 	return r
 }
 
@@ -248,5 +250,31 @@ func TestGetBalance_ServiceError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// ── GET /internal/wallets/balance ─────────────────────────────────────────────
+
+func TestInternalGetBalance_ReturnsBalance(t *testing.T) {
+	walletID := uuid.New()
+	svc := &mockService{
+		getWalletFn: func(userID string) (domain.Wallet, error) {
+			return domain.Wallet{ID: walletID, UserID: uuid.MustParse(userID), Balance: 75.00}, nil
+		},
+	}
+
+	req := withUser(httptest.NewRequest(http.MethodGet, "/internal/wallets/balance", nil), uuid.New().String())
+	rec := httptest.NewRecorder()
+	newRouter(svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	var got map[string]float64
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("could not decode response: %v", err)
+	}
+	if got["balance"] != 75.00 {
+		t.Errorf("expected 75.00, got %v", got["balance"])
 	}
 }

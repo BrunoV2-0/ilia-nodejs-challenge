@@ -16,8 +16,9 @@ import (
 )
 
 type config struct {
-	jwtKey string
-	addr   string
+	jwtKey         string
+	internalJwtKey string
+	addr           string
 }
 
 type app struct {
@@ -30,11 +31,15 @@ func initConfig() config {
 	if jwtKey == "" {
 		log.Fatal("JWT_KEY environment variable is required")
 	}
+	internalJwtKey := os.Getenv("JWT_INTERNAL_KEY")
+	if internalJwtKey == "" {
+		log.Fatal("JWT_INTERNAL_KEY environment variable is required")
+	}
 	addr := os.Getenv("PORT")
 	if addr == "" {
 		addr = "3001"
 	}
-	return config{jwtKey: jwtKey, addr: ":" + addr}
+	return config{jwtKey: jwtKey, internalJwtKey: internalJwtKey, addr: ":" + addr}
 }
 
 func initDatabase() *sqlx.DB {
@@ -61,8 +66,18 @@ func initRouter(db *sqlx.DB, cfg config) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(jwtmw.JWT(cfg.jwtKey))
-	h.Routes(r)
+
+	// public routes — validated with external JWT key
+	r.Group(func(r chi.Router) {
+		r.Use(jwtmw.JWT(cfg.jwtKey))
+		h.Routes(r)
+	})
+
+	// internal routes — validated with internal JWT key (service-to-service only)
+	r.Group(func(r chi.Router) {
+		r.Use(jwtmw.JWT(cfg.internalJwtKey))
+		h.InternalRoutes(r)
+	})
 
 	return r
 }

@@ -30,6 +30,10 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/wallets/balance", h.getBalance)
 }
 
+func (h *Handler) InternalRoutes(r chi.Router) {
+	r.Get("/internal/wallets/balance", h.getBalance)
+}
+
 type createRequest struct {
 	Amount float64              `json:"amount"`
 	Type   domain.TransactionType `json:"type"`
