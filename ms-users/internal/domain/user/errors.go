@@ -3,7 +3,8 @@ package user
 import "errors"
 
 var (
-	ErrNotFound      = errors.New("user not found")
-	ErrEmailTaken    = errors.New("email already in use")
-	ErrUnauthorized  = errors.New("invalid credentials")
+	ErrNotFound       = errors.New("user not found")
+	ErrEmailTaken     = errors.New("email already in use")
+	ErrUnauthorized   = errors.New("invalid credentials")
+	ErrWalletNotEmpty = errors.New("cannot delete user with remaining wallet balance")
 )
