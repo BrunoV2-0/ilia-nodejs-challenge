@@ -84,38 +84,37 @@ func (r *PostgresRepository) FindByEmail(email string) (domain.User, error) {
 
 func (r *PostgresRepository) Update(id uuid.UUID, fields domain.UpdateFields) (domain.User, error) {
 	setClauses := []string{"updated_at = NOW()"}
-	args := []interface{}{}
-	idx := 1
+	params := map[string]any{"id": id}
 
 	if fields.FirstName != nil {
-		setClauses = append(setClauses, fmt.Sprintf("first_name = $%d", idx))
-		args = append(args, *fields.FirstName)
-		idx++
+		setClauses = append(setClauses, "first_name = :first_name")
+		params["first_name"] = *fields.FirstName
 	}
 	if fields.LastName != nil {
-		setClauses = append(setClauses, fmt.Sprintf("last_name = $%d", idx))
-		args = append(args, *fields.LastName)
-		idx++
+		setClauses = append(setClauses, "last_name = :last_name")
+		params["last_name"] = *fields.LastName
 	}
 	if fields.Email != nil {
-		setClauses = append(setClauses, fmt.Sprintf("email = $%d", idx))
-		args = append(args, *fields.Email)
-		idx++
+		setClauses = append(setClauses, "email = :email")
+		params["email"] = *fields.Email
 	}
 	if fields.Password != nil {
-		setClauses = append(setClauses, fmt.Sprintf("password = $%d", idx))
-		args = append(args, *fields.Password)
-		idx++
+		setClauses = append(setClauses, "password = :password")
+		params["password"] = *fields.Password
 	}
 
-	args = append(args, id)
 	query := fmt.Sprintf(`
-		UPDATE users SET %s WHERE id = $%d
+		UPDATE users SET %s WHERE id = :id
 		RETURNING id, first_name, last_name, email, password, created_at, updated_at`,
-		strings.Join(setClauses, ", "), idx)
+		strings.Join(setClauses, ", "))
+
+	nq, args, err := sqlx.Named(query, params)
+	if err != nil {
+		return domain.User{}, fmt.Errorf("building update query: %w", err)
+	}
 
 	var row domain.User
-	if err := r.db.QueryRowx(query, args...).StructScan(&row); err != nil {
+	if err := r.db.QueryRowx(r.db.Rebind(nq), args...).StructScan(&row); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.User{}, domain.ErrNotFound
 		}
