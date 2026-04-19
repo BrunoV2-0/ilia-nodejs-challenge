@@ -3,6 +3,7 @@ package user
 import (
 	"errors"
 	"regexp"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -15,6 +16,8 @@ type User struct {
 	LastName  string    `db:"last_name"  json:"last_name"`
 	Email     string    `db:"email"      json:"email"`
 	Password  string    `db:"password"   json:"-"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
 func (u *User) Validate() error {
