@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -14,10 +15,11 @@ const (
 )
 
 type Transaction struct {
-	ID     uuid.UUID
-	UserID uuid.UUID
-	Amount float64
-	Type   TransactionType
+	ID        uuid.UUID       `db:"id"`
+	UserID    uuid.UUID       `db:"user_id"`
+	Amount    float64         `db:"amount"`
+	Type      TransactionType `db:"type"`
+	CreatedAt time.Time       `db:"created_at"`
 }
 
 func (t *Transaction) Validate() error {
