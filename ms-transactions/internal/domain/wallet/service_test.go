@@ -8,11 +8,13 @@ import (
 	"github.com/ilia/ms-transactions/internal/domain/wallet"
 )
 
-// mockRepository is a hand-written mock — no code generation.
 type mockRepository struct {
-	createFn     func(tx wallet.Transaction) (wallet.Transaction, error)
-	findAllFn    func(userID string, txType string) ([]wallet.Transaction, error)
-	getBalanceFn func(userID string) (float64, error)
+	createFn              func(tx wallet.Transaction) (wallet.Transaction, error)
+	findAllFn             func(userID string, txType string) ([]wallet.Transaction, error)
+	getBalanceFn          func(userID string) (float64, error)
+	findOrCreateWalletFn  func(userID uuid.UUID) (wallet.Wallet, error)
+	updateWalletVersionFn func(walletID uuid.UUID, currentVersion int64, delta float64) (bool, error)
+	inTxFn                func(fn func(wallet.Repository) error) error
 }
 
 func (m *mockRepository) Create(tx wallet.Transaction) (wallet.Transaction, error) {
@@ -25,6 +27,27 @@ func (m *mockRepository) FindAll(userID string, txType string) ([]wallet.Transac
 
 func (m *mockRepository) GetBalance(userID string) (float64, error) {
 	return m.getBalanceFn(userID)
+}
+
+func (m *mockRepository) FindOrCreateWallet(userID uuid.UUID) (wallet.Wallet, error) {
+	if m.findOrCreateWalletFn != nil {
+		return m.findOrCreateWalletFn(userID)
+	}
+	return wallet.Wallet{ID: uuid.New(), UserID: userID, Balance: 10000.00, Version: 0}, nil
+}
+
+func (m *mockRepository) UpdateWalletVersion(walletID uuid.UUID, currentVersion int64, delta float64) (bool, error) {
+	if m.updateWalletVersionFn != nil {
+		return m.updateWalletVersionFn(walletID, currentVersion, delta)
+	}
+	return true, nil
+}
+
+func (m *mockRepository) InTx(fn func(wallet.Repository) error) error {
+	if m.inTxFn != nil {
+		return m.inTxFn(fn)
+	}
+	return fn(m)
 }
 
 func TestService_CreateTransaction(t *testing.T) {
@@ -105,6 +128,101 @@ func TestService_CreateTransaction(t *testing.T) {
 			t.Fatal("expected error from repo, got nil")
 		}
 	})
+}
+
+func TestService_CreateTransaction_DebitInsufficientFunds(t *testing.T) {
+	userID := uuid.New().String()
+
+	repo := &mockRepository{
+		findOrCreateWalletFn: func(uid uuid.UUID) (wallet.Wallet, error) {
+			return wallet.Wallet{ID: uuid.New(), UserID: uid, Balance: 50.00, Version: 0}, nil
+		},
+		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			t.Error("Create must not be called when balance is insufficient")
+			return wallet.Transaction{}, nil
+		},
+	}
+	svc := wallet.NewService(repo)
+
+	_, err := svc.CreateTransaction(userID, 100.00, wallet.Debit)
+	if !errors.Is(err, wallet.ErrInsufficientFunds) {
+		t.Fatalf("expected ErrInsufficientFunds, got %v", err)
+	}
+}
+
+func TestService_CreateTransaction_DebitExactBalance(t *testing.T) {
+	userID := uuid.New().String()
+	walletID := uuid.New()
+
+	repo := &mockRepository{
+		findOrCreateWalletFn: func(uid uuid.UUID) (wallet.Wallet, error) {
+			return wallet.Wallet{ID: walletID, UserID: uid, Balance: 100.00, Version: 0}, nil
+		},
+		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			tx.ID = uuid.New()
+			return tx, nil
+		},
+	}
+	svc := wallet.NewService(repo)
+
+	got, err := svc.CreateTransaction(userID, 100.00, wallet.Debit)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ID == (uuid.UUID{}) {
+		t.Error("expected non-zero ID")
+	}
+}
+
+func TestService_CreateTransaction_OCC_ConflictThenSuccess(t *testing.T) {
+	userID := uuid.New().String()
+	calls := 0
+
+	repo := &mockRepository{
+		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			tx.ID = uuid.New()
+			return tx, nil
+		},
+		updateWalletVersionFn: func(walletID uuid.UUID, currentVersion int64, delta float64) (bool, error) {
+			calls++
+			if calls == 1 {
+				return false, nil // simulate stale version on first attempt
+			}
+			return true, nil
+		},
+	}
+	svc := wallet.NewService(repo)
+
+	got, err := svc.CreateTransaction(userID, 50.00, wallet.Credit)
+	if err != nil {
+		t.Fatalf("expected success after retry, got %v", err)
+	}
+	if got.ID == (uuid.UUID{}) {
+		t.Error("expected non-zero ID")
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 UpdateWalletVersion calls (1 conflict + 1 success), got %d", calls)
+	}
+}
+
+func TestService_CreateTransaction_OCC_ConflictExhausted(t *testing.T) {
+	userID := uuid.New().String()
+
+	repo := &mockRepository{
+		createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+			tx.ID = uuid.New()
+			return tx, nil
+		},
+		updateWalletVersionFn: func(walletID uuid.UUID, currentVersion int64, delta float64) (bool, error) {
+			return false, nil // always conflict
+		},
+	}
+	svc := wallet.NewService(repo)
+
+	_, err := svc.CreateTransaction(userID, 50.00, wallet.Credit)
+	if !errors.Is(err, wallet.ErrConflict) {
+		t.Fatalf("expected ErrConflict after retries exhausted, got %v", err)
+	}
 }
 
 func TestService_ListTransactions(t *testing.T) {
