@@ -1,10 +1,10 @@
-package transaction_test
+package wallet_test
 
 import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/ilia/ms-transactions/internal/domain/transaction"
+	"github.com/ilia/ms-transactions/internal/domain/wallet"
 )
 
 func TestTransaction_Validate(t *testing.T) {
@@ -12,57 +12,57 @@ func TestTransaction_Validate(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		tx      transaction.Transaction
+		tx      wallet.Transaction
 		wantErr bool
 	}{
 		{
 			name: "valid credit transaction",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: validUserID,
 				Amount: 100.50,
-				Type:   transaction.Credit,
+				Type:   wallet.Credit,
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid debit transaction",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: validUserID,
 				Amount: 49.99,
-				Type:   transaction.Debit,
+				Type:   wallet.Debit,
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty UserID",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: uuid.UUID{},
 				Amount: 100.00,
-				Type:   transaction.Credit,
+				Type:   wallet.Credit,
 			},
 			wantErr: true,
 		},
 		{
 			name: "zero amount",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: validUserID,
 				Amount: 0.0,
-				Type:   transaction.Credit,
+				Type:   wallet.Credit,
 			},
 			wantErr: true,
 		},
 		{
 			name: "negative amount",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: validUserID,
 				Amount: -10.00,
-				Type:   transaction.Credit,
+				Type:   wallet.Credit,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid type",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: validUserID,
 				Amount: 100,
 				Type:   "TRANSFER",
@@ -71,7 +71,7 @@ func TestTransaction_Validate(t *testing.T) {
 		},
 		{
 			name: "empty type",
-			tx: transaction.Transaction{
+			tx: wallet.Transaction{
 				UserID: validUserID,
 				Amount: 100,
 				Type:   "",

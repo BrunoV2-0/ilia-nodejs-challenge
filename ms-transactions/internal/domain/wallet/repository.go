@@ -1,4 +1,4 @@
-package transaction
+package wallet
 
 type Repository interface {
 	Create(tx Transaction) (Transaction, error)

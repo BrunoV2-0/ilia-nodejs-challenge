@@ -1,4 +1,4 @@
-package transaction
+package wallet
 
 import "github.com/google/uuid"
 

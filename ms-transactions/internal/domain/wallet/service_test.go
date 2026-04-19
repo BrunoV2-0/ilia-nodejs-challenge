@@ -1,25 +1,25 @@
-package transaction_test
+package wallet_test
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/ilia/ms-transactions/internal/domain/transaction"
+	"github.com/ilia/ms-transactions/internal/domain/wallet"
 )
 
 // mockRepository is a hand-written mock — no code generation.
 type mockRepository struct {
-	createFn     func(tx transaction.Transaction) (transaction.Transaction, error)
-	findAllFn    func(userID string, txType string) ([]transaction.Transaction, error)
+	createFn     func(tx wallet.Transaction) (wallet.Transaction, error)
+	findAllFn    func(userID string, txType string) ([]wallet.Transaction, error)
 	getBalanceFn func(userID string) (float64, error)
 }
 
-func (m *mockRepository) Create(tx transaction.Transaction) (transaction.Transaction, error) {
+func (m *mockRepository) Create(tx wallet.Transaction) (wallet.Transaction, error) {
 	return m.createFn(tx)
 }
 
-func (m *mockRepository) FindAll(userID string, txType string) ([]transaction.Transaction, error) {
+func (m *mockRepository) FindAll(userID string, txType string) ([]wallet.Transaction, error) {
 	return m.findAllFn(userID, txType)
 }
 
@@ -32,14 +32,14 @@ func TestService_CreateTransaction(t *testing.T) {
 
 	t.Run("success — valid credit transaction persisted", func(t *testing.T) {
 		repo := &mockRepository{
-			createFn: func(tx transaction.Transaction) (transaction.Transaction, error) {
+			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				tx.ID = uuid.New()
 				return tx, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
-		got, err := svc.CreateTransaction(userID, 150.75, transaction.Credit)
+		got, err := svc.CreateTransaction(userID, 150.75, wallet.Credit)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -49,7 +49,7 @@ func TestService_CreateTransaction(t *testing.T) {
 		if got.Amount != 150.75 {
 			t.Errorf("expected amount 150.75, got %v", got.Amount)
 		}
-		if got.Type != transaction.Credit {
+		if got.Type != wallet.Credit {
 			t.Errorf("expected type CREDIT, got %v", got.Type)
 		}
 	})
@@ -57,15 +57,14 @@ func TestService_CreateTransaction(t *testing.T) {
 	t.Run("invalid entity — repo never called", func(t *testing.T) {
 		repoCalled := false
 		repo := &mockRepository{
-			createFn: func(tx transaction.Transaction) (transaction.Transaction, error) {
+			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				repoCalled = true
 				return tx, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
-		// zero amount is invalid
-		_, err := svc.CreateTransaction(userID, 0, transaction.Credit)
+		_, err := svc.CreateTransaction(userID, 0, wallet.Credit)
 		if err == nil {
 			t.Fatal("expected validation error, got nil")
 		}
@@ -77,14 +76,14 @@ func TestService_CreateTransaction(t *testing.T) {
 	t.Run("invalid userID — repo never called", func(t *testing.T) {
 		repoCalled := false
 		repo := &mockRepository{
-			createFn: func(tx transaction.Transaction) (transaction.Transaction, error) {
+			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
 				repoCalled = true
 				return tx, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
-		_, err := svc.CreateTransaction(uuid.UUID{}.String(), 100, transaction.Credit)
+		_, err := svc.CreateTransaction(uuid.UUID{}.String(), 100, wallet.Credit)
 		if err == nil {
 			t.Fatal("expected validation error, got nil")
 		}
@@ -95,13 +94,13 @@ func TestService_CreateTransaction(t *testing.T) {
 
 	t.Run("repo error propagated", func(t *testing.T) {
 		repo := &mockRepository{
-			createFn: func(tx transaction.Transaction) (transaction.Transaction, error) {
-				return transaction.Transaction{}, errors.New("db error")
+			createFn: func(tx wallet.Transaction) (wallet.Transaction, error) {
+				return wallet.Transaction{}, errors.New("db error")
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
-		_, err := svc.CreateTransaction(userID, 50.00, transaction.Debit)
+		_, err := svc.CreateTransaction(userID, 50.00, wallet.Debit)
 		if err == nil {
 			t.Fatal("expected error from repo, got nil")
 		}
@@ -112,12 +111,12 @@ func TestService_ListTransactions(t *testing.T) {
 	userID := uuid.New().String()
 
 	t.Run("returns all transactions when no type filter", func(t *testing.T) {
-		want := []transaction.Transaction{
-			{ID: uuid.New(), Amount: 100.00, Type: transaction.Credit},
-			{ID: uuid.New(), Amount: 50.00, Type: transaction.Debit},
+		want := []wallet.Transaction{
+			{ID: uuid.New(), Amount: 100.00, Type: wallet.Credit},
+			{ID: uuid.New(), Amount: 50.00, Type: wallet.Debit},
 		}
 		repo := &mockRepository{
-			findAllFn: func(uid string, txType string) ([]transaction.Transaction, error) {
+			findAllFn: func(uid string, txType string) ([]wallet.Transaction, error) {
 				if uid != userID {
 					t.Errorf("wrong userID passed to repo: %v", uid)
 				}
@@ -127,7 +126,7 @@ func TestService_ListTransactions(t *testing.T) {
 				return want, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
 		got, err := svc.ListTransactions(userID, "")
 		if err != nil {
@@ -140,14 +139,14 @@ func TestService_ListTransactions(t *testing.T) {
 
 	t.Run("passes type filter to repo", func(t *testing.T) {
 		repo := &mockRepository{
-			findAllFn: func(uid string, txType string) ([]transaction.Transaction, error) {
+			findAllFn: func(uid string, txType string) ([]wallet.Transaction, error) {
 				if txType != "CREDIT" {
 					t.Errorf("expected CREDIT filter, got %v", txType)
 				}
-				return []transaction.Transaction{}, nil
+				return []wallet.Transaction{}, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
 		_, err := svc.ListTransactions(userID, "CREDIT")
 		if err != nil {
@@ -168,7 +167,7 @@ func TestService_GetBalance(t *testing.T) {
 				return 250.50, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
 		got, err := svc.GetBalance(userID)
 		if err != nil {
@@ -185,7 +184,7 @@ func TestService_GetBalance(t *testing.T) {
 				return 0, nil
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
 		got, err := svc.GetBalance(userID)
 		if err != nil {
@@ -202,7 +201,7 @@ func TestService_GetBalance(t *testing.T) {
 				return 0, errors.New("db error")
 			},
 		}
-		svc := transaction.NewService(repo)
+		svc := wallet.NewService(repo)
 
 		_, err := svc.GetBalance(userID)
 		if err == nil {
