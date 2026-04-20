@@ -1,13 +1,5 @@
 # End-to-End Test Scenarios
 
-## Infrastructure
-- Stack spun up via `testcontainers-go` compose module (self-contained, no manual `docker compose up`)
-- Suite lives in `e2e/` at monorepo root as a separate Go module
-- `TestMain` starts the full stack, waits for healthchecks, then tears it down after all tests run
-- Each test uses a unique email (UUID suffix) to avoid cross-test interference
-
----
-
 ## User Service — `POST /users`
 
 | # | Scenario | Input | Expected |
@@ -121,11 +113,3 @@
 | X01 | Delete blocked by wallet balance | Create user → auth → CREDIT 50 → DELETE user | 422 from ms-users |
 | X02 | Delete succeeds after zeroing wallet | Create user → auth → CREDIT 50 → DEBIT 50 → DELETE user | 204 from ms-users |
 | X03 | Multiple credits then full debit then delete | CREDIT 30 + CREDIT 70 → DEBIT 100 → DELETE | 204 |
-
----
-
-## Notes for Review
-
-- Add scenarios here if anything is missing before implementation starts.
-- Scenario IDs (U01, T03, etc.) will be used as test function name suffixes.
-- Each test is independent: creates its own user with a unique email and manages its own data.
