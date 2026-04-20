@@ -50,7 +50,7 @@ func TestJWT_ExpiredToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer "+makeToken(testSecret, "user-id", time.Now().Add(-time.Hour)))
+	req.Header.Set("Authorization", "Bearer "+makeToken(testSecret, "ms-caller", time.Now().Add(-time.Hour)))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -58,16 +58,16 @@ func TestJWT_ExpiredToken(t *testing.T) {
 	}
 }
 
-func TestJWT_ValidToken_InjectsUserID(t *testing.T) {
-	sub := "550e8400-e29b-41d4-a716-446655440000"
-	var gotID string
+func TestJWT_ValidToken_InjectsCaller(t *testing.T) {
+	sub := "ms-transactions"
+	var gotCaller string
 
 	h := middleware.JWT(testSecret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, ok := middleware.UserIDFromContext(r.Context())
+		caller, ok := middleware.CallerFromContext(r.Context())
 		if !ok {
-			t.Error("expected userID in context")
+			t.Error("expected caller in context")
 		}
-		gotID = id
+		gotCaller = caller
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -79,7 +79,7 @@ func TestJWT_ValidToken_InjectsUserID(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
-	if gotID != sub {
-		t.Errorf("expected %q, got %q", sub, gotID)
+	if gotCaller != sub {
+		t.Errorf("expected %q, got %q", sub, gotCaller)
 	}
 }

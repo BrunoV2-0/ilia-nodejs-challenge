@@ -27,10 +27,11 @@ func parseToken(t *testing.T, authHeader, secret string) *jwt.Token {
 }
 
 func TestTransactionsClient_HasBalance_True(t *testing.T) {
-	var gotHeader string
+	var gotHeader, gotUserID string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("Authorization")
+		gotUserID = r.URL.Query().Get("user_id")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]float64{"balance": 150.00})
 	}))
@@ -46,7 +47,9 @@ func TestTransactionsClient_HasBalance_True(t *testing.T) {
 	tok := parseToken(t, gotHeader, internalKey)
 	assert.True(t, tok.Valid)
 	sub, _ := tok.Claims.GetSubject()
-	assert.Equal(t, userID.String(), sub)
+	assert.Equal(t, "ms-users", sub, "sub must identify the calling service, not the user")
+
+	assert.Equal(t, userID.String(), gotUserID, "user_id must be passed as a query parameter")
 }
 
 func TestTransactionsClient_HasBalance_False(t *testing.T) {

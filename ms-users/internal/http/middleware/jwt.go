@@ -10,11 +10,13 @@ import (
 
 type contextKey string
 
-const UserIDKey contextKey = "userID"
+const CallerKey contextKey = "caller"
 
-func UserIDFromContext(ctx context.Context) (string, bool) {
-	id, ok := ctx.Value(UserIDKey).(string)
-	return id, ok && id != ""
+// CallerFromContext returns the sub claim from a validated JWT.
+// For ms-users (all-internal routes) this is always a service name, e.g. "ms-transactions".
+func CallerFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(CallerKey).(string)
+	return v, ok && v != ""
 }
 
 func JWT(secret string) func(http.Handler) http.Handler {
@@ -44,7 +46,7 @@ func JWT(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), UserIDKey, sub)
+			ctx := context.WithValue(r.Context(), CallerKey, sub)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

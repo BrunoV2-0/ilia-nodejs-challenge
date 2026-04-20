@@ -2,11 +2,16 @@ openapi: 3.0.0
 info:
   title: ms-users
   version: 1.0.0
-  description: User management and authentication service.
+  description: |
+    Internal user management service. All routes require a valid internal JWT
+    (signed with JWT_INTERNAL_KEY). This service is not frontend-facing.
 
 servers:
   - url: http://localhost:3002
     description: Local
+
+security:
+  - internalAuth: []
 
 tags:
   - name: Auth
@@ -16,7 +21,7 @@ paths:
   /auth:
     post:
       tags: [Auth]
-      summary: Authenticate user and get access token
+      summary: Validate credentials and return a user-facing JWT
       requestBody:
         required: true
         content:
@@ -38,7 +43,7 @@ paths:
   /users:
     post:
       tags: [Users]
-      summary: Create a new user (public)
+      summary: Create a new user
       requestBody:
         required: true
         content:
@@ -60,8 +65,6 @@ paths:
     get:
       tags: [Users]
       summary: List all users
-      security:
-        - bearerAuth: []
       responses:
         '200':
           description: List of users
@@ -87,8 +90,6 @@ paths:
     get:
       tags: [Users]
       summary: Get a user by ID
-      security:
-        - bearerAuth: []
       responses:
         '200':
           description: User found
@@ -106,8 +107,6 @@ paths:
     patch:
       tags: [Users]
       summary: Partially update a user
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -133,8 +132,6 @@ paths:
     delete:
       tags: [Users]
       summary: Delete a user
-      security:
-        - bearerAuth: []
       responses:
         '204':
           description: User deleted
@@ -168,7 +165,7 @@ components:
         password:
           type: string
           format: password
-          example: s3cr3t
+          example: Tr0ub4dor3
 
     UpdateUserRequest:
       type: object
@@ -187,7 +184,7 @@ components:
         password:
           type: string
           format: password
-          example: newpassword
+          example: N3wStr0ngPass
 
     User:
       type: object
@@ -224,7 +221,7 @@ components:
         password:
           type: string
           format: password
-          example: s3cr3t
+          example: Tr0ub4dor3
 
     AuthResponse:
       type: object
@@ -233,6 +230,7 @@ components:
           $ref: '#/components/schemas/User'
         access_token:
           type: string
+          description: User-facing JWT signed with JWT_KEY; forward this to the client.
           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
     Error:
@@ -243,10 +241,11 @@ components:
           example: record not found
 
   securitySchemes:
-    bearerAuth:
+    internalAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: HS256 JWT signed with JWT_INTERNAL_KEY (service-to-service only).
 
   responses:
     BadRequest:
@@ -256,7 +255,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     Unauthorized:
-      description: Missing or invalid JWT token
+      description: Missing or invalid internal JWT
       content:
         application/json:
           schema:

@@ -31,7 +31,7 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 func (h *Handler) InternalRoutes(r chi.Router) {
-	r.Get("/internal/wallets/balance", h.getBalance)
+	r.Get("/internal/wallets/balance", h.getInternalBalance)
 }
 
 type createRequest struct {
@@ -83,6 +83,25 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, txs)
+}
+
+// getInternalBalance serves the service-to-service route.
+// The caller is authenticated by the internal JWT; the target user is passed
+// as a query parameter rather than the JWT sub (which identifies the calling service).
+func (h *Handler) getInternalBalance(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user_id query parameter is required")
+		return
+	}
+
+	wallet, err := h.svc.GetWallet(userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]float64{"balance": wallet.Balance})
 }
 
 func (h *Handler) getBalance(w http.ResponseWriter, r *http.Request) {

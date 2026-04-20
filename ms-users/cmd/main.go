@@ -70,12 +70,10 @@ func initRouter(svc *domain.Service, cfg config) *chi.Mux {
 	authH := handler.NewAuthHandler(svc, cfg.jwtKey)
 	userH := handler.NewUserHandler(svc)
 
-	r.Post("/auth", authH.ServeHTTP)
-
-	userH.PublicRoutes(r)
-
 	r.Group(func(r chi.Router) {
-		r.Use(jwtmw.JWT(cfg.jwtKey))
+		r.Use(jwtmw.JWT(cfg.internalJwtKey))
+		r.Post("/auth", authH.ServeHTTP)
+		userH.PublicRoutes(r)
 		userH.ProtectedRoutes(r)
 	})
 

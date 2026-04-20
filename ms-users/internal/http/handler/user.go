@@ -8,7 +8,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	domain "github.com/ilia/ms-users/internal/domain/user"
-	"github.com/ilia/ms-users/internal/http/middleware"
 )
 
 type userService interface {
@@ -143,12 +142,6 @@ func (h *UserHandler) deleteUser(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid user id")
-		return
-	}
-
-	_, ok := middleware.UserIDFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 

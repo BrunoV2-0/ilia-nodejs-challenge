@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const callerIdentity = "ms-users"
+
 type TransactionsClient struct {
 	baseURL     string
 	internalKey []byte
@@ -25,12 +27,13 @@ func New(baseURL, internalKey string) *TransactionsClient {
 }
 
 func (c *TransactionsClient) HasBalance(userID uuid.UUID) (bool, error) {
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/internal/wallets/balance", nil)
+	url := fmt.Sprintf("%s/internal/wallets/balance?user_id=%s", c.baseURL, userID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return false, fmt.Errorf("creating request: %w", err)
 	}
 
-	token, err := c.mintToken(userID)
+	token, err := c.mintToken()
 	if err != nil {
 		return false, fmt.Errorf("minting internal token: %w", err)
 	}
@@ -52,9 +55,9 @@ func (c *TransactionsClient) HasBalance(userID uuid.UUID) (bool, error) {
 	return body.Balance > 0, nil
 }
 
-func (c *TransactionsClient) mintToken(userID uuid.UUID) (string, error) {
+func (c *TransactionsClient) mintToken() (string, error) {
 	claims := jwt.MapClaims{
-		"sub": userID.String(),
+		"sub": callerIdentity,
 		"exp": time.Now().Add(time.Minute).Unix(),
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(c.internalKey)
