@@ -1,89 +1,101 @@
-# ília - Code Challenge NodeJS
-**English**
-##### Before we start ⚠️
-**Please create a fork from this repository**
+# README
 
-## The Challenge:
-One of the ília Digital verticals is Financial and to level your knowledge we will do a Basic Financial Application and for that we divided this Challenge in 2 Parts.
+This repository is a solution to the Ilia backend challenge. The original challenge brief and requirements are in [`CHALLENGE-README.md`](./CHALLENGE-README.md).
 
-The first part is mandatory, which is to create a Wallet microservice to store the users' transactions, the second part is optional (*for Seniors, it's mandatory*) which is to create a Users Microservice with integration between the two microservices (Wallet and Users), using internal communications between them, that can be done in any of the following strategies: gRPC, REST, Kafka or via Messaging Queues and this communication must have a different security of the external application (JWT, SSL, ...), **Development in javascript (Node) is required.**
+---
 
-![diagram](diagram.png)
+# Architecture
 
-### General Instructions:
-## Part 1 - Wallet Microservice
+## Repository layout
 
-This microservice must be a digital Wallet where the user transactions will be stored 
+```
+ilia-nodejs-challenge/
+├── ms-users/          # User management service  (port 3002)
+├── ms-transactions/   # Wallet & transaction service (port 3001)
+├── e2e/               # End-to-end test suite (separate Go module)
+└── docker-compose.yml # Full-stack orchestration
+```
 
-### The Application must have
+Each service is an independent Go module with an identical internal structure:
 
-    - Project setup documentation (readme.md).
-    - Application and Database running on a container (Docker, ...).
-    - This Microservice must receive HTTP Request.
-    - Have a dedicated database (Postgres, MySQL, Mongo, DynamoDB, ...).
-    - JWT authentication on all routes (endpoints) the PrivateKey must be ILIACHALLENGE (passed by env var).
-    - Configure the Microservice port to 3001. 
-    - Gitflow applied with Code Review in each step, open a feature/branch, create at least one pull request and merge it with Main(master deprecated), this step is important to simulate a team work and not just a commit.
+```
+internal/
+  domain/<aggregate>/   # Pure business logic — no infra imports
+  database/<aggregate>/ # PostgreSQL implementations
+  http/
+    handler/            # Decode → call service → encode
+    middleware/         # JWT validation only
+    client/             # Outbound HTTP (ms-users only)
+cmd/main.go             # Composition root — wires everything, no logic
+```
 
-## Part 2 - Microservice Users and Wallet Integration
+---
 
-### The Application must have:
+## Dependency rule
 
-    - Project setup documentation (readme.md).
-    - Application and Database running on a container (Docker, ...).
-    - This Microservice must receive HTTP Request.   
-    - Have a dedicated database(Postgres, MySQL, Mongo, DynamoDB...), you may use an Auth service like AWS Cognito.
-    - JWT authentication on all routes (endpoints) the PrivateKey must be ILIACHALLENGE (passed by env var).
-    - Set the Microservice port to 3002. 
-    - Gitflow applied with Code Review in each step, open a feature/branch, create at least one pull request and merge it with Main(master deprecated), this step is important to simulate a teamwork and not just a commit.
-    - Internal Communication Security (JWT, SSL, ...), if it is JWT the PrivateKey must be ILIACHALLENGE_INTERNAL (passed by env var).
-    - Communication between Microservices using any of the following: gRPC, REST, Kafka or via Messaging Queues (update your readme with the instructions to run if using a Docker/Container environment).
+Dependencies flow **inward only**: `database/` and `http/` import `domain/`. `domain/` imports nothing outside stdlib.
 
-## Part 3 - Frontend Implementation - Fullstack candidates only
+Repository **interfaces** are declared inside `domain/`. PostgreSQL **implementations** live in `database/` and satisfy those interfaces. This means the domain can be tested with hand-written mocks and never touches a database.
 
-In this challenge, you will build the frontend application for a FinTech Wallet platform, integrating with the backend microservices provided in the Node.js challenge.
+Constructors always return the interface, never the concrete type:
 
-The application must allow users to authenticate, view their wallet balance, list transactions, and create credit or debit operations. The goal is to evaluate your ability to design a modern, secure, and well-structured UI that consumes microservice APIs, handles authentication via JWT, and provides a solid user experience with proper loading, error, and empty states.
+```go
+func New(db *sqlx.DB) wallet.Repository  // not *PostgresRepository
+```
 
-You may implement the solution using React, Vue, or Angular, following the required stack for the position you're running for and best practices outlined in the challenge.
+---
 
-### Before you start ⚠️
+## Why the Wallet entity exists
 
-- **Create a separate folder for the Frontend project**
-- Frontend must be built in **Typescript**.  
-- The goal is to deliver a production-like UI that consumes the backend services:
-  - Wallet Service (port **3001**)
-  - Users Service (port **3002**, optional but mandatory for Senior)
+Transactions are an immutable append-only log. A wallet is the read model: the current balance derived from that log. Keeping them separate makes the balance a first-class, directly queryable value rather than a `SUM()` computed on every read.
 
-### Challenge Overview
+Owning the balance at the application level — rather than deriving it in SQL — means the debit guard (`wallet.CanDebit(amount)`) is a plain Go method that can be unit-tested without a database. Any rule that changes (e.g. allowing overdrafts up to a limit, enforcing a daily spend cap) is added to the `Wallet` struct and covered by a domain test, not by patching a query.
 
-You will build a **web application** that allows a user to:
+The entity is also the natural place to attach wallet-level metadata in the future: credit limits, overdraft flags, currency, freeze status. All of that belongs on `Wallet`, not on individual transaction rows.
 
-- Authenticate (if Users service exists)
-- View wallet balance
-- List transactions
-- Create transactions (credit/debit)
-- Handle loading, empty, and error states properly
+The `Wallet` struct carries a `Version int64` field used for optimistic concurrency control (see below). A transaction entry never changes after it is inserted.
 
-### Design Guidelines
+---
 
-No visual prototype or UI mockups will be provided for this challenge on purpose. This is intentional so we can evaluate your product sense, design judgment, and ability to translate business requirements into a coherent user experience. You should focus on creating a clean, modern, and intuitive interface that prioritizes usability and clarity of financial information. Pay special attention to information hierarchy (for example, making balance visibility prominent), form usability and validation, transaction readability, and clear feedback for system states such as loading, success, and errors. Consistency in layout, spacing, typography, and component reuse is important, as well as responsiveness and accessibility basics. *We are not evaluating graphic design skills*, but rather your ability to craft a professional, production-ready UI that engineers and users would find reliable and easy to use.
+## Optimistic Concurrency Control (OCC)
 
-Feel free to leverage on any opensource components library.
+Multiple concurrent requests can attempt to debit or credit the same wallet simultaneously. Instead of a row-level lock, the service uses a version counter:
 
-### Requirements 
-This frontend should reflect real-world practices:
-- secure JWT handling
-- clean UX flows
-- robust API integration
-- scalable component structure
-- test coverage where it matters
-- supports i18n
-- responsive design (supporting mobile browser)
+1. Read the wallet and note its current `Version`.
+2. Validate the operation (e.g. sufficient funds for a debit).
+3. `UPDATE wallets SET balance = balance + delta, version = version + 1 WHERE id = $1 AND version = $2` — the `WHERE version = $2` is the guard.
+4. If zero rows were updated, another request modified the wallet first → return `ErrConflict`.
 
-#### In the end, send us your fork repo updated. As soon as you finish, please let us know.
+The service retries up to **3 times** with exponential back-off + jitter on `ErrConflict`. This handles bursts of concurrent writes without ever blocking a thread on a database lock.
 
-#### We are available to answer any questions.
+This approach was chosen under the assumption that **contention per wallet is low** — the typical user submits one transaction at a time and conflicts are rare. Under low contention OCC is cheaper than a pessimistic lock because it avoids the overhead of acquiring and holding a row lock on every write. If the system were to support high-frequency trading or bulk automated transactions against the same wallet, the retry loop would become a bottleneck and a pessimistic lock (`SELECT ... FOR UPDATE`) would be the better trade-off.
 
+---
 
-Happy coding! 🤓
+## Cross-service integration
+
+`ms-users` must refuse to delete a user whose wallet still has a positive balance. Rather than coupling the domain to HTTP, a narrow interface is declared inside `domain/user`:
+
+```go
+type WalletChecker interface {
+    HasBalance(userID uuid.UUID) (bool, error)
+}
+```
+
+`http/client/` provides the concrete implementation: it mints a **short-lived (1 min) HS256 JWT** signed with `JWT_INTERNAL_KEY` and calls `GET /internal/wallets/balance` on `ms-transactions`. The domain never knows about HTTP.
+
+The internal route is separate from public routes so that `JWT_INTERNAL_KEY` rotation can be done independently of the user-facing `JWT_KEY`.
+
+---
+
+## Guidelines for future work
+
+| Concern | Rule |
+|---|---|
+| New feature | Start with the domain: entity + repository interface + service. Never touch the DB or HTTP layers until the domain tests are green. |
+| New service-to-service call | Declare an interface in the calling service's `domain/`. Implement in `http/client/`. The domain never imports a client package. |
+| Concurrent writes to a shared resource | Use OCC with a version column, not a DB lock. Add retry logic in the service, not the handler. |
+| Adding a route | Handler decodes → calls service → encodes. No business logic in handlers. Map sentinel domain errors to HTTP status codes. |
+| Error propagation | Wrap with `fmt.Errorf("context: %w", err)`. Declare sentinel errors in `domain/` (`var ErrNotFound = errors.New(...)`). HTTP handlers switch on `errors.Is`. |
+| Testing | Domain tests use hand-written mocks. DB tests use `testcontainers-go` with real PostgreSQL. Handler tests use `httptest`. E2E tests in `e2e/` use the full docker-compose stack. |
+| Branch | `feature/<service>-<layer>` → `develop` via PR. `main` receives only `release/*` branches. |

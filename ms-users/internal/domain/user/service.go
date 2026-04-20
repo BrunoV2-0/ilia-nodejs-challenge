@@ -1,6 +1,7 @@
 package user
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -58,6 +59,9 @@ func (s *Service) GetUser(id uuid.UUID) (User, error) {
 }
 
 func (s *Service) UpdateUser(id uuid.UUID, fields UpdateFields) (User, error) {
+	if fields.Email != nil && !emailRegex.MatchString(*fields.Email) {
+		return User{}, errors.New("email is invalid")
+	}
 	if fields.Password != nil {
 		hashed, err := HashPassword(*fields.Password)
 		if err != nil {
