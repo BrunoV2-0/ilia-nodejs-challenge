@@ -11,7 +11,7 @@ func TestDeleteUser_X01_BlockedByBalance(t *testing.T) {
 	id, token := createUser(t)
 	creditUser(t, token, 50)
 
-	resp := doJSON(t, http.MethodDelete, usersURL+"/users/"+id, nil, token)
+	resp := doJSON(t, http.MethodDelete, usersURL+"/users/"+id, nil, internalToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("X01: expected 422 (wallet not empty), got %d", resp.StatusCode)
@@ -25,7 +25,7 @@ func TestDeleteUser_X02_SucceedsAfterZeroingBalance(t *testing.T) {
 	creditUser(t, token, 50)
 	debitUser(t, token, 50)
 
-	resp := doJSON(t, http.MethodDelete, usersURL+"/users/"+id, nil, token)
+	resp := doJSON(t, http.MethodDelete, usersURL+"/users/"+id, nil, internalToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("X02: expected 204 (deleted), got %d", resp.StatusCode)
@@ -40,7 +40,7 @@ func TestDeleteUser_X03_MultipleCreditsFullDebitThenDelete(t *testing.T) {
 	creditUser(t, token, 70)
 	debitUser(t, token, 100)
 
-	resp := doJSON(t, http.MethodDelete, usersURL+"/users/"+id, nil, token)
+	resp := doJSON(t, http.MethodDelete, usersURL+"/users/"+id, nil, internalToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("X03: expected 204, got %d", resp.StatusCode)

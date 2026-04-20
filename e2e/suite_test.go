@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	tccompose "github.com/testcontainers/testcontainers-go/modules/compose"
 )
@@ -17,6 +18,20 @@ import (
 var (
 	usersURL        = "http://localhost:3002"
 	transactionsURL = "http://localhost:3001"
+
+	// internalToken is minted once before the test suite runs.
+	// It identifies this test process as "ms-e2e" to ms-users, which now
+	// requires the internal JWT on all routes.
+	internalToken string
+)
+
+const (
+	// usersInternalJWTKey must match JWT_INTERNAL_KEY in ms-users/.env.
+	usersInternalJWTKey = "ILIACHALLENGE_INTERNAL"
+
+	// e2ePassword is a password that satisfies the strength policy
+	// (≥8 chars, letter+digit, zxcvbn score ≥2).
+	e2ePassword = "E2eStr0ng!Pass99"
 )
 
 func TestMain(m *testing.M) {
@@ -47,10 +62,29 @@ func run(m *testing.M) int {
 		return 1
 	}
 
+	tok, err := mintInternalToken()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mint internal token: %v\n", err)
+		return 1
+	}
+	internalToken = tok
+
 	return m.Run()
 }
 
+// mintInternalToken creates a short-lived HS256 JWT identifying this process
+// as "ms-e2e", signed with the shared internal key.
+func mintInternalToken() (string, error) {
+	claims := jwt.MapClaims{
+		"sub": "ms-e2e",
+		"exp": time.Now().Add(24 * time.Hour).Unix(),
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).
+		SignedString([]byte(usersInternalJWTKey))
+}
+
 // waitForHTTP polls url until it gets any HTTP response or maxAttempts is reached.
+// A 401 counts as "ready" — the service is up and rejecting unauthenticated requests.
 func waitForHTTP(url string, maxAttempts int) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	for i := range maxAttempts {
@@ -103,7 +137,9 @@ func decodeBody(t *testing.T, resp *http.Response, dst any) {
 	}
 }
 
-// createUser creates a unique user, authenticates, and returns (userID, JWT token).
+// createUser creates a unique user via the internal API and returns (userID, userJWT).
+// The returned token is the user-facing JWT (JWT_KEY) for use with ms-transactions.
+// Use internalToken for subsequent ms-users calls.
 func createUser(t *testing.T) (id, token string) {
 	t.Helper()
 	email := "e2e-" + uuid.NewString() + "@example.com"
@@ -112,8 +148,8 @@ func createUser(t *testing.T) (id, token string) {
 		"first_name": "E2E",
 		"last_name":  "User",
 		"email":      email,
-		"password":   "secret123",
-	}, "")
+		"password":   e2ePassword,
+	}, internalToken)
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("createUser: expected 201, got %d", resp.StatusCode)
@@ -124,8 +160,8 @@ func createUser(t *testing.T) (id, token string) {
 
 	authResp := doJSON(t, http.MethodPost, usersURL+"/auth", map[string]string{
 		"email":    email,
-		"password": "secret123",
-	}, "")
+		"password": e2ePassword,
+	}, internalToken)
 	if authResp.StatusCode != http.StatusOK {
 		authResp.Body.Close()
 		t.Fatalf("createUser/auth: expected 200, got %d", authResp.StatusCode)
