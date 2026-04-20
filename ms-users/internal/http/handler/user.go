@@ -54,7 +54,7 @@ func (h *UserHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	u, err := h.svc.CreateUser(req.FirstName, req.LastName, req.Email, req.Password)
 	if err != nil {
 		switch {
-		case errors.Is(err, domain.ErrEmailTaken):
+		case errors.Is(err, domain.ErrEmailTaken), errors.Is(err, domain.ErrEmailNotAvailable):
 			writeError(w, http.StatusConflict, err.Error())
 		default:
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -127,7 +127,7 @@ func (h *UserHandler) updateUser(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, domain.ErrNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
-		case errors.Is(err, domain.ErrEmailTaken):
+		case errors.Is(err, domain.ErrEmailTaken), errors.Is(err, domain.ErrEmailNotAvailable):
 			writeError(w, http.StatusConflict, err.Error())
 		default:
 			writeError(w, http.StatusBadRequest, err.Error())

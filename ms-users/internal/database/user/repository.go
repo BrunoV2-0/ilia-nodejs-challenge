@@ -33,7 +33,7 @@ func (r *PostgresRepository) Create(u domain.User) (domain.User, error) {
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == pgUniqueViolation {
-			return domain.User{}, domain.ErrEmailTaken
+			return domain.User{}, r.emailConflictError(u.Email)
 		}
 		return domain.User{}, fmt.Errorf("creating user: %w", err)
 	}
@@ -125,11 +125,22 @@ func (r *PostgresRepository) Update(id uuid.UUID, fields domain.UpdateFields) (d
 		}
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == pgUniqueViolation {
-			return domain.User{}, domain.ErrEmailTaken
+			return domain.User{}, r.emailConflictError(*fields.Email)
 		}
 		return domain.User{}, fmt.Errorf("updating user: %w", err)
 	}
 	return row, nil
+}
+
+// emailConflictError returns ErrEmailNotAvailable when the conflicting email
+// row belongs to a soft-deleted user, and ErrEmailTaken when it is active.
+func (r *PostgresRepository) emailConflictError(email string) error {
+	var deletedAt sql.NullTime
+	err := r.db.QueryRow(`SELECT deleted_at FROM users WHERE email = $1`, email).Scan(&deletedAt)
+	if err == nil && deletedAt.Valid {
+		return domain.ErrEmailNotAvailable
+	}
+	return domain.ErrEmailTaken
 }
 
 func (r *PostgresRepository) Delete(id uuid.UUID) error {

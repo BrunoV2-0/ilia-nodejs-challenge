@@ -77,9 +77,17 @@ paths:
   /wallets/balance:
     get:
       tags: [Wallet]
-      summary: Get current wallet balance for the authenticated user
+      summary: Get wallet balance for a user (internal service calls only)
       security:
-        - bearerAuth: []
+        - internalAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the user whose balance to retrieve
       responses:
         '200':
           description: Current balance
@@ -87,6 +95,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BalanceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -149,6 +159,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    internalAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: HS256 JWT signed with JWT_INTERNAL_KEY (service-to-service only).
 
   responses:
     BadRequest:
