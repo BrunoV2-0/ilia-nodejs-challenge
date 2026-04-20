@@ -27,11 +27,10 @@ func New(svc walletService) *Handler {
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/transactions", h.createTransaction)
 	r.Get("/transactions", h.listTransactions)
-	r.Get("/wallets/balance", h.getBalance)
 }
 
 func (h *Handler) InternalRoutes(r chi.Router) {
-	r.Get("/internal/wallets/balance", h.getBalance)
+	r.Get("/wallets/balance", h.getInternalBalance)
 }
 
 type createRequest struct {
@@ -85,10 +84,13 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, txs)
 }
 
-func (h *Handler) getBalance(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
+// getInternalBalance serves the service-to-service route.
+// The caller is authenticated by the internal JWT; the target user is passed
+// as a query parameter rather than the JWT sub (which identifies the calling service).
+func (h *Handler) getInternalBalance(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user_id query parameter is required")
 		return
 	}
 

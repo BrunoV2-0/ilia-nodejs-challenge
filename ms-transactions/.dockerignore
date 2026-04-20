@@ -1,0 +1,15 @@
+# secrets — injected at runtime via env_file in docker-compose
+.env
+.env*
+
+# version control
+.git
+.gitignore
+
+# docs and local tooling
+*.md
+.dockerignore
+Dockerfile
+
+# test files — not needed to compile the binary
+**/*_test.go

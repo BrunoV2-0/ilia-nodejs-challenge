@@ -40,19 +40,12 @@ func newUserRouter(svc *mockUserService) http.Handler {
 	r := chi.NewRouter()
 	h := handler.NewUserHandler(svc)
 	h.PublicRoutes(r)
-	r.Group(func(r chi.Router) {
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				next.ServeHTTP(w, req)
-			})
-		})
-		h.ProtectedRoutes(r)
-	})
+	h.ProtectedRoutes(r)
 	return r
 }
 
-func withUserCtx(r *http.Request, id string) *http.Request {
-	ctx := context.WithValue(r.Context(), middleware.UserIDKey, id)
+func withCallerCtx(r *http.Request, caller string) *http.Request {
+	ctx := context.WithValue(r.Context(), middleware.CallerKey, caller)
 	return r.WithContext(ctx)
 }
 
@@ -159,7 +152,7 @@ func TestListUsers_ReturnsAll(t *testing.T) {
 		listFn: func() ([]domain.User, error) { return want, nil },
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodGet, "/users", nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodGet, "/users", nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -185,7 +178,7 @@ func TestListUsers_InternalError(t *testing.T) {
 		listFn: func() ([]domain.User, error) { return nil, errors.New("db error") },
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodGet, "/users", nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodGet, "/users", nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -207,7 +200,7 @@ func TestGetUser_ReturnsUser(t *testing.T) {
 		},
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodGet, "/users/"+id.String(), nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodGet, "/users/"+id.String(), nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -228,7 +221,7 @@ func TestGetUser_NotFound(t *testing.T) {
 		getFn: func(uuid.UUID) (domain.User, error) { return domain.User{}, domain.ErrNotFound },
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodGet, "/users/"+uuid.New().String(), nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodGet, "/users/"+uuid.New().String(), nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -240,7 +233,7 @@ func TestGetUser_NotFound(t *testing.T) {
 func TestGetUser_InvalidID(t *testing.T) {
 	svc := &mockUserService{}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodGet, "/users/not-a-uuid", nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodGet, "/users/not-a-uuid", nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -267,7 +260,7 @@ func TestUpdateUser_OK(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(map[string]string{"first_name": newName})
-	req := withUserCtx(httptest.NewRequest(http.MethodPatch, "/users/"+id.String(), bytes.NewReader(body)), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodPatch, "/users/"+id.String(), bytes.NewReader(body)), "ms-gateway")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
@@ -285,7 +278,7 @@ func TestUpdateUser_NotFound(t *testing.T) {
 	}
 
 	body, _ := json.Marshal(map[string]string{"last_name": "X"})
-	req := withUserCtx(httptest.NewRequest(http.MethodPatch, "/users/"+uuid.New().String(), bytes.NewReader(body)), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodPatch, "/users/"+uuid.New().String(), bytes.NewReader(body)), "ms-gateway")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
@@ -308,7 +301,7 @@ func TestDeleteUser_NoContent(t *testing.T) {
 		},
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodDelete, "/users/"+id.String(), nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodDelete, "/users/"+id.String(), nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -322,7 +315,7 @@ func TestDeleteUser_WalletNotEmpty(t *testing.T) {
 		deleteFn: func(uuid.UUID) error { return domain.ErrWalletNotEmpty },
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodDelete, "/users/"+uuid.New().String(), nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodDelete, "/users/"+uuid.New().String(), nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 
@@ -336,7 +329,7 @@ func TestDeleteUser_NotFound(t *testing.T) {
 		deleteFn: func(uuid.UUID) error { return domain.ErrNotFound },
 	}
 
-	req := withUserCtx(httptest.NewRequest(http.MethodDelete, "/users/"+uuid.New().String(), nil), uuid.New().String())
+	req := withCallerCtx(httptest.NewRequest(http.MethodDelete, "/users/"+uuid.New().String(), nil), "ms-gateway")
 	rec := httptest.NewRecorder()
 	newUserRouter(svc).ServeHTTP(rec, req)
 

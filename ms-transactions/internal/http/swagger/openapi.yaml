@@ -1,0 +1,180 @@
+openapi: 3.0.0
+info:
+  title: ms-transactions
+  version: 1.0.0
+  description: Wallet and transaction management service.
+
+servers:
+  - url: http://localhost:3001
+    description: Local
+
+tags:
+  - name: Transactions
+  - name: Wallet
+
+paths:
+  /transactions:
+    post:
+      tags: [Transactions]
+      summary: Create a transaction (credit or debit)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+      responses:
+        '201':
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Concurrent modification conflict — retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Insufficient funds for debit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Transactions]
+      summary: List transactions for the authenticated user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [CREDIT, DEBIT]
+          description: Filter by transaction type
+      responses:
+        '200':
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /wallets/balance:
+    get:
+      tags: [Wallet]
+      summary: Get wallet balance for a user (internal service calls only)
+      security:
+        - internalAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the user whose balance to retrieve
+      responses:
+        '200':
+          description: Current balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  schemas:
+    CreateTransactionRequest:
+      type: object
+      required: [amount, type]
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          example: 100.50
+        type:
+          type: string
+          enum: [CREDIT, DEBIT]
+          example: CREDIT
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        user_id:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        amount:
+          type: number
+          format: double
+          example: 100.50
+        type:
+          type: string
+          enum: [CREDIT, DEBIT]
+          example: CREDIT
+        created_at:
+          type: string
+          format: date-time
+
+    BalanceResponse:
+      type: object
+      properties:
+        balance:
+          type: number
+          format: double
+          example: 250.75
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: insufficient funds
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    internalAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: HS256 JWT signed with JWT_INTERNAL_KEY (service-to-service only).
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

@@ -37,15 +37,33 @@ func (m *mockWalletChecker) HasBalance(id uuid.UUID) (bool, error) {
 }
 
 // noBalance is a WalletChecker stub that always reports zero balance.
-// Use it in tests that don't exercise the wallet-balance guard.
 func noBalance() *mockWalletChecker {
 	return &mockWalletChecker{hasBalanceFn: func(uuid.UUID) (bool, error) { return false, nil }}
+}
+
+type mockPasswordChecker struct {
+	checkFn func(password string) error
+}
+
+func (m *mockPasswordChecker) CheckStrength(password string) error {
+	return m.checkFn(password)
+}
+
+// alwaysStrong is a PasswordStrengthChecker stub that always passes.
+// Use it in tests that don't exercise the strength-check path.
+func alwaysStrong() *mockPasswordChecker {
+	return &mockPasswordChecker{checkFn: func(string) error { return nil }}
+}
+
+// alwaysWeak is a PasswordStrengthChecker stub that always rejects.
+func alwaysWeak() *mockPasswordChecker {
+	return &mockPasswordChecker{checkFn: func(string) error { return errors.New("too weak") }}
 }
 
 // ── CreateUser ────────────────────────────────────────────────────────────────
 
 func TestService_CreateUser_HashesPassword(t *testing.T) {
-	const plaintext = "secret123"
+	const plaintext = "Tr0ub4dor&3"
 	var stored string
 
 	repo := &mockRepository{
@@ -55,7 +73,7 @@ func TestService_CreateUser_HashesPassword(t *testing.T) {
 			return u, nil
 		},
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	got, err := svc.CreateUser("John", "Doe", "john@example.com", plaintext)
 	if err != nil {
@@ -77,7 +95,7 @@ func TestService_CreateUser_ValidationError(t *testing.T) {
 			return user.User{}, nil
 		},
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	_, err := svc.CreateUser("", "Doe", "john@example.com", "secret")
 	if err == nil {
@@ -88,13 +106,32 @@ func TestService_CreateUser_ValidationError(t *testing.T) {
 	}
 }
 
+func TestService_CreateUser_WeakPasswordRejected(t *testing.T) {
+	repoCalled := false
+	repo := &mockRepository{
+		createFn: func(user.User) (user.User, error) {
+			repoCalled = true
+			return user.User{}, nil
+		},
+	}
+	svc := user.NewService(repo, noBalance(), alwaysWeak())
+
+	_, err := svc.CreateUser("John", "Doe", "john@example.com", "weakpass")
+	if err == nil {
+		t.Fatal("expected weak-password error, got nil")
+	}
+	if repoCalled {
+		t.Error("repo must not be called when password is too weak")
+	}
+}
+
 func TestService_CreateUser_RepoErrorPropagated(t *testing.T) {
 	repo := &mockRepository{
 		createFn: func(user.User) (user.User, error) {
 			return user.User{}, user.ErrEmailTaken
 		},
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	_, err := svc.CreateUser("John", "Doe", "john@example.com", "secret")
 	if !errors.Is(err, user.ErrEmailTaken) {
@@ -106,11 +143,11 @@ func TestService_CreateUser_RepoErrorPropagated(t *testing.T) {
 
 func TestService_Authenticate_Success(t *testing.T) {
 	svc := user.NewService(&mockRepository{
-		createFn: func(u user.User) (user.User, error) { u.ID = uuid.New(); return u, nil },
+		createFn:      func(u user.User) (user.User, error) { u.ID = uuid.New(); return u, nil },
 		findByEmailFn: func(string) (user.User, error) { return user.User{}, user.ErrNotFound },
-	}, noBalance())
+	}, noBalance(), alwaysStrong())
 
-	// create a user so we have a real bcrypt hash to compare against
+	// create a user so we have a real argon2 hash to compare against
 	_, err := svc.CreateUser("Jane", "Doe", "jane@example.com", "password123")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -126,7 +163,7 @@ func TestService_Authenticate_Success(t *testing.T) {
 		},
 		findByEmailFn: func(string) (user.User, error) { return storedUser, nil },
 	}
-	svc2 := user.NewService(repo, noBalance())
+	svc2 := user.NewService(repo, noBalance(), alwaysStrong())
 	_, _ = svc2.CreateUser("Jane", "Doe", "jane@example.com", "password123")
 
 	got, err := svc2.Authenticate("jane@example.com", "password123")
@@ -148,7 +185,7 @@ func TestService_Authenticate_WrongPassword(t *testing.T) {
 		},
 		findByEmailFn: func(string) (user.User, error) { return storedUser, nil },
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 	_, _ = svc.CreateUser("Jane", "Doe", "jane@example.com", "correct")
 
 	_, err := svc.Authenticate("jane@example.com", "wrong")
@@ -161,7 +198,7 @@ func TestService_Authenticate_UserNotFound(t *testing.T) {
 	repo := &mockRepository{
 		findByEmailFn: func(string) (user.User, error) { return user.User{}, user.ErrNotFound },
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	_, err := svc.Authenticate("ghost@example.com", "any")
 	if !errors.Is(err, user.ErrUnauthorized) {
@@ -183,7 +220,7 @@ func TestService_UpdateUser_HashesNewPassword(t *testing.T) {
 			return user.User{}, nil
 		},
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	id := uuid.New()
 	_, err := svc.UpdateUser(id, user.UpdateFields{Password: &[]string{newPlain}[0]})
@@ -198,6 +235,26 @@ func TestService_UpdateUser_HashesNewPassword(t *testing.T) {
 	}
 }
 
+func TestService_UpdateUser_WeakPasswordRejected(t *testing.T) {
+	repoCalled := false
+	repo := &mockRepository{
+		updateFn: func(_ uuid.UUID, _ user.UpdateFields) (user.User, error) {
+			repoCalled = true
+			return user.User{}, nil
+		},
+	}
+	svc := user.NewService(repo, noBalance(), alwaysWeak())
+
+	weak := "weakpass"
+	_, err := svc.UpdateUser(uuid.New(), user.UpdateFields{Password: &weak})
+	if err == nil {
+		t.Fatal("expected weak-password error, got nil")
+	}
+	if repoCalled {
+		t.Error("repo must not be called when password is too weak")
+	}
+}
+
 func TestService_UpdateUser_NoPasswordFieldUnchanged(t *testing.T) {
 	name := "Updated"
 	repo := &mockRepository{
@@ -208,7 +265,7 @@ func TestService_UpdateUser_NoPasswordFieldUnchanged(t *testing.T) {
 			return user.User{FirstName: name}, nil
 		},
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	got, err := svc.UpdateUser(uuid.New(), user.UpdateFields{FirstName: &name})
 	if err != nil {
@@ -231,7 +288,7 @@ func TestService_DeleteUser_DelegatesToRepo(t *testing.T) {
 			return nil
 		},
 	}
-	svc := user.NewService(repo, noBalance())
+	svc := user.NewService(repo, noBalance(), alwaysStrong())
 
 	if err := svc.DeleteUser(id); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -252,7 +309,7 @@ func TestService_DeleteUser_BlockedWhenWalletHasBalance(t *testing.T) {
 	wallets := &mockWalletChecker{
 		hasBalanceFn: func(uuid.UUID) (bool, error) { return true, nil },
 	}
-	svc := user.NewService(repo, wallets)
+	svc := user.NewService(repo, wallets, alwaysStrong())
 
 	err := svc.DeleteUser(uuid.New())
 	if !errors.Is(err, user.ErrWalletNotEmpty) {
@@ -267,7 +324,7 @@ func TestService_DeleteUser_WalletCheckerError(t *testing.T) {
 	wallets := &mockWalletChecker{
 		hasBalanceFn: func(uuid.UUID) (bool, error) { return false, errors.New("unreachable") },
 	}
-	svc := user.NewService(&mockRepository{}, wallets)
+	svc := user.NewService(&mockRepository{}, wallets, alwaysStrong())
 
 	err := svc.DeleteUser(uuid.New())
 	if err == nil {

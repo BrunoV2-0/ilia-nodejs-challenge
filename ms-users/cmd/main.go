@@ -13,6 +13,8 @@ import (
 	"github.com/ilia/ms-users/internal/http/client"
 	"github.com/ilia/ms-users/internal/http/handler"
 	jwtmw "github.com/ilia/ms-users/internal/http/middleware"
+	"github.com/ilia/ms-users/internal/http/swagger"
+	"github.com/ilia/ms-users/internal/password"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -68,14 +70,16 @@ func initRouter(svc *domain.Service, cfg config) *chi.Mux {
 	authH := handler.NewAuthHandler(svc, cfg.jwtKey)
 	userH := handler.NewUserHandler(svc)
 
-	r.Post("/auth", authH.ServeHTTP)
-
-	userH.PublicRoutes(r)
-
 	r.Group(func(r chi.Router) {
-		r.Use(jwtmw.JWT(cfg.jwtKey))
+		r.Use(jwtmw.JWT(cfg.internalJwtKey))
+		r.Post("/auth", authH.ServeHTTP)
+		userH.PublicRoutes(r)
 		userH.ProtectedRoutes(r)
 	})
+
+	if os.Getenv("APP_ENV") == "Development" {
+		swagger.Register(r)
+	}
 
 	return r
 }
@@ -92,7 +96,7 @@ func main() {
 
 	repo := userdb.New(db)
 	wallets := client.New(cfg.transactionsURL, cfg.internalJwtKey)
-	svc := domain.NewService(repo, wallets)
+	svc := domain.NewService(repo, wallets, password.NewStrengthChecker())
 
 	r := initRouter(svc, cfg)
 

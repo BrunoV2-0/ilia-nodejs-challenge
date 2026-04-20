@@ -12,6 +12,7 @@ import (
 	"github.com/ilia/ms-transactions/internal/domain/wallet"
 	"github.com/ilia/ms-transactions/internal/http/handler"
 	jwtmw "github.com/ilia/ms-transactions/internal/http/middleware"
+	"github.com/ilia/ms-transactions/internal/http/swagger"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -78,6 +79,10 @@ func initRouter(db *sqlx.DB, cfg config) *chi.Mux {
 		r.Use(jwtmw.JWT(cfg.internalJwtKey))
 		h.InternalRoutes(r)
 	})
+
+	if os.Getenv("APP_ENV") == "Development" {
+		swagger.Register(r)
+	}
 
 	return r
 }

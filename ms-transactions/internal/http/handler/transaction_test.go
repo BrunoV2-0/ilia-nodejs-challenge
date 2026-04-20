@@ -211,22 +211,26 @@ func TestListTransactions_TypeFilter(t *testing.T) {
 	}
 }
 
-// ── GET /wallets/balance ──────────────────────────────────────────────────────
+// ── GET /wallets/balance (internal JWT + ?user_id=) ──────────────────────────
 
 func TestGetBalance_ReturnsBalance(t *testing.T) {
 	walletID := uuid.New()
+	userID := uuid.New()
 	svc := &mockService{
-		getWalletFn: func(userID string) (domain.Wallet, error) {
-			return domain.Wallet{ID: walletID, UserID: uuid.MustParse(userID), Balance: 350.75, Version: 1}, nil
+		getWalletFn: func(uid string) (domain.Wallet, error) {
+			if uid != userID.String() {
+				t.Errorf("expected user_id %s, got %s", userID, uid)
+			}
+			return domain.Wallet{ID: walletID, UserID: userID, Balance: 350.75, Version: 1}, nil
 		},
 	}
 
-	req := withUser(httptest.NewRequest(http.MethodGet, "/wallets/balance", nil), uuid.New().String())
+	req := httptest.NewRequest(http.MethodGet, "/wallets/balance?user_id="+userID.String(), nil)
 	rec := httptest.NewRecorder()
 	newRouter(svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+		t.Errorf("expected 200, got %d — %s", rec.Code, rec.Body.String())
 	}
 	var got map[string]float64
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
@@ -244,7 +248,7 @@ func TestGetBalance_ServiceError(t *testing.T) {
 		},
 	}
 
-	req := withUser(httptest.NewRequest(http.MethodGet, "/wallets/balance", nil), uuid.New().String())
+	req := httptest.NewRequest(http.MethodGet, "/wallets/balance?user_id="+uuid.New().String(), nil)
 	rec := httptest.NewRecorder()
 	newRouter(svc).ServeHTTP(rec, req)
 
@@ -253,28 +257,14 @@ func TestGetBalance_ServiceError(t *testing.T) {
 	}
 }
 
-// ── GET /internal/wallets/balance ─────────────────────────────────────────────
+func TestGetBalance_MissingUserID(t *testing.T) {
+	svc := &mockService{}
 
-func TestInternalGetBalance_ReturnsBalance(t *testing.T) {
-	walletID := uuid.New()
-	svc := &mockService{
-		getWalletFn: func(userID string) (domain.Wallet, error) {
-			return domain.Wallet{ID: walletID, UserID: uuid.MustParse(userID), Balance: 75.00}, nil
-		},
-	}
-
-	req := withUser(httptest.NewRequest(http.MethodGet, "/internal/wallets/balance", nil), uuid.New().String())
+	req := httptest.NewRequest(http.MethodGet, "/wallets/balance", nil)
 	rec := httptest.NewRecorder()
 	newRouter(svc).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-	var got map[string]float64
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("could not decode response: %v", err)
-	}
-	if got["balance"] != 75.00 {
-		t.Errorf("expected 75.00, got %v", got["balance"])
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
 	}
 }

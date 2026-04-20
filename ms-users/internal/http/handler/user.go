@@ -8,7 +8,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	domain "github.com/ilia/ms-users/internal/domain/user"
-	"github.com/ilia/ms-users/internal/http/middleware"
 )
 
 type userService interface {
@@ -55,7 +54,7 @@ func (h *UserHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	u, err := h.svc.CreateUser(req.FirstName, req.LastName, req.Email, req.Password)
 	if err != nil {
 		switch {
-		case errors.Is(err, domain.ErrEmailTaken):
+		case errors.Is(err, domain.ErrEmailTaken), errors.Is(err, domain.ErrEmailNotAvailable):
 			writeError(w, http.StatusConflict, err.Error())
 		default:
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -128,7 +127,7 @@ func (h *UserHandler) updateUser(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, domain.ErrNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
-		case errors.Is(err, domain.ErrEmailTaken):
+		case errors.Is(err, domain.ErrEmailTaken), errors.Is(err, domain.ErrEmailNotAvailable):
 			writeError(w, http.StatusConflict, err.Error())
 		default:
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -143,12 +142,6 @@ func (h *UserHandler) deleteUser(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid user id")
-		return
-	}
-
-	_, ok := middleware.UserIDFromContext(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
