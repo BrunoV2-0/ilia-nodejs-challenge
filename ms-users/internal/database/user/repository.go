@@ -123,6 +123,10 @@ func (r *PostgresRepository) Update(id uuid.UUID, fields domain.UpdateFields) (d
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.User{}, domain.ErrNotFound
 		}
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pgUniqueViolation {
+			return domain.User{}, domain.ErrEmailTaken
+		}
 		return domain.User{}, fmt.Errorf("updating user: %w", err)
 	}
 	return row, nil
