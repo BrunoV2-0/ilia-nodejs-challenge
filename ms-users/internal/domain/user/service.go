@@ -13,18 +13,29 @@ type WalletChecker interface {
 	HasBalance(userID uuid.UUID) (bool, error)
 }
 
-type Service struct {
-	repo    Repository
-	wallets WalletChecker
+// PasswordStrengthChecker validates raw passwords before they are hashed.
+// Implementations live outside the domain so they may use third-party libs.
+type PasswordStrengthChecker interface {
+	CheckStrength(password string) error
 }
 
-func NewService(repo Repository, wallets WalletChecker) *Service {
-	return &Service{repo: repo, wallets: wallets}
+type Service struct {
+	repo        Repository
+	wallets     WalletChecker
+	pwdStrength PasswordStrengthChecker
+}
+
+func NewService(repo Repository, wallets WalletChecker, pwdStrength PasswordStrengthChecker) *Service {
+	return &Service{repo: repo, wallets: wallets, pwdStrength: pwdStrength}
 }
 
 func (s *Service) CreateUser(firstName, lastName, email, password string) (User, error) {
 	u := User{FirstName: firstName, LastName: lastName, Email: email, Password: password}
 	if err := u.Validate(); err != nil {
+		return User{}, err
+	}
+
+	if err := s.pwdStrength.CheckStrength(password); err != nil {
 		return User{}, err
 	}
 
@@ -63,6 +74,9 @@ func (s *Service) UpdateUser(id uuid.UUID, fields UpdateFields) (User, error) {
 		return User{}, errors.New("email is invalid")
 	}
 	if fields.Password != nil {
+		if err := s.pwdStrength.CheckStrength(*fields.Password); err != nil {
+			return User{}, err
+		}
 		hashed, err := HashPassword(*fields.Password)
 		if err != nil {
 			return User{}, fmt.Errorf("hashing password: %w", err)
